@@ -1,0 +1,36 @@
+{
+  "name": "wapp-quote",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily uplifting Hindi/Urdu quote bot for a WhatsApp group.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/src/cli.js serve",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate:quotes": "tsx src/scripts/validate-quotes.ts"
+  },
+  "dependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "dotenv": "^16.4.7",
+    "node-cron": "^4.2.1",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/qrcode-terminal": "^0.12.2",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.2",
+    "vitest": "^4.1.9"
+  }
+}

@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+!.env.example
+data
+dist
+node_modules
+coverage
+npm-debug.log*
+.DS_Store
+README.md
+docker-compose.yml
+fly.toml

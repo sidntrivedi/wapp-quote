@@ -1,0 +1,7 @@
+services:
+  wapp-quote:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data

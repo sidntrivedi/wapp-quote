@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment and secrets (keep the example template)
+.env
+.env.*
+!.env.example
+
+# Runtime data: WhatsApp auth session, send state, pairing QR/files
+data/
+
+# Explicit credential patterns (belt-and-suspenders if data/ is moved)
+**/creds.json
+**/*session*.json
+**/auth/
+
+# Test and coverage
+coverage/
+.vitest/
+
+# Logs
+npm-debug.log*
+*.log
+
+# OS and editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
