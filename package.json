@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Daily uplifting Hindi/Urdu quote bot for a WhatsApp group.",
+  "description": "Daily uplifting Hindi quote bot for a WhatsApp group.",
   "engines": {
     "node": ">=20.0.0"
   },
