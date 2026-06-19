@@ -16,7 +16,8 @@ export function startDailySchedule(options: {
     expression,
     () => {
       options.task().catch((error: unknown) => {
-        options.logger.error({ error }, 'scheduled quote send failed');
+        const err = error instanceof Error ? error : new Error(String(error));
+        options.logger.error({ err, message: err.message, stack: err.stack }, 'scheduled quote send failed');
       });
     },
     { timezone: options.timeZone }

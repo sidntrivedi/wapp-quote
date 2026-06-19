@@ -20,6 +20,9 @@ export type SendResult = {
 
 export interface WhatsAppSender {
   connect(): Promise<void>;
+  ensureConnected(): Promise<void>;
+  isConnected(): boolean;
+  isLoggedOut(): boolean;
   close(): Promise<void>;
   sendText(jid: string, text: string): Promise<SendResult>;
   listGroups(): Promise<Array<{ jid: string; subject: string; participants: number }>>;

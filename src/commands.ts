@@ -7,7 +7,10 @@ import { getQuoteForPreview } from './quotes.js';
 import { selectQuote } from './quote-source.js';
 import { runDailyQuote } from './quote-runner.js';
 import { renderQuoteMessage } from './message.js';
+import { localDateKey } from './date.js';
 import { startDailySchedule } from './scheduler.js';
+import { startConnectionWatchdog } from './connection-watchdog.js';
+import { acquireServeLock, assertServeNotRunning, releaseServeLock } from './serve-lock.js';
 import { StateStore } from './state-store.js';
 import { enrichQuoteReflection } from './ai-reflection.js';
 import type { Quote } from './types.js';
@@ -36,7 +39,7 @@ export async function runCommand(options: {
       await resetAuth(options);
       return;
     case 'list-groups':
-      await listGroups(options);
+      await listGroups({ config: options.config, sender: options.sender });
       return;
     case 'send-now':
       await sendNow(options);
@@ -56,19 +59,50 @@ async function serve(options: {
   sender: WhatsAppSender;
   stateStore: StateStore;
 }): Promise<void> {
+  await acquireServeLock(options.config.dataDir);
+
   const groupJid = requireGroupJid(options.config);
   await options.sender.connect();
+
+  startConnectionWatchdog({ sender: options.sender, logger: options.logger });
 
   startDailySchedule({
     quoteTime: options.config.quoteTime,
     timeZone: options.config.timeZone,
     logger: options.logger,
     task: async () => {
+      await runScheduledDailyQuote({
+        config: options.config,
+        logger: options.logger,
+        sender: options.sender,
+        stateStore: options.stateStore,
+        groupJid
+      });
+    }
+  });
+
+  options.logger.info('bot is running');
+  await waitForShutdown(options.config.dataDir);
+}
+
+async function runScheduledDailyQuote(options: {
+  config: AppConfig;
+  logger: Logger;
+  sender: WhatsAppSender;
+  stateStore: StateStore;
+  groupJid: string;
+}): Promise<void> {
+  const maxAttempts = 3;
+  const retryDelayMs = 5 * 60 * 1000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await options.sender.ensureConnected();
       const state = await options.stateStore.load();
       const result = await runDailyQuote({
         sender: options.sender,
         state,
-        groupJid,
+        groupJid: options.groupJid,
         now: new Date(),
         timeZone: options.config.timeZone,
         selectQuote: (currentState) =>
@@ -82,15 +116,36 @@ async function serve(options: {
 
       if (result.status === 'sent') {
         await options.stateStore.save(result.nextState);
-        options.logger.info({ dateKey: result.dateKey, quoteId: result.quoteId, messageId: result.messageId }, 'daily quote sent');
+        options.logger.info(
+          { dateKey: result.dateKey, quoteId: result.quoteId, messageId: result.messageId, attempt },
+          'daily quote sent'
+        );
       } else {
-        options.logger.info({ dateKey: result.dateKey, quoteId: result.quoteId }, 'daily quote already sent');
+        options.logger.info({ dateKey: result.dateKey, quoteId: result.quoteId, attempt }, 'daily quote already sent');
       }
-    }
-  });
 
-  options.logger.info('bot is running');
-  await waitForever();
+      return;
+    } catch (error) {
+      const state = await options.stateStore.load();
+      const dateKey = localDateKey(new Date(), options.config.timeZone);
+      if (state.sentDates[dateKey]) {
+        options.logger.warn({ error, attempt, dateKey }, 'daily quote already recorded for today; not retrying');
+        return;
+      }
+
+      if (options.sender.isLoggedOut()) {
+        options.logger.error({ error, attempt }, 'daily quote aborted; WhatsApp session logged out');
+        throw error;
+      }
+
+      if (attempt === maxAttempts) {
+        throw error;
+      }
+
+      options.logger.warn({ error, attempt, retryInMs: retryDelayMs }, 'daily quote attempt failed; retrying');
+      await sleep(retryDelayMs);
+    }
+  }
 }
 
 async function pair(options: { config: AppConfig; sender: WhatsAppSender; logger: Logger }): Promise<void> {
@@ -106,7 +161,8 @@ async function resetAuth(options: { config: AppConfig; logger: Logger }): Promis
   options.logger.info({ authDir: options.config.authDir }, 'removed WhatsApp auth session');
 }
 
-async function listGroups(options: { sender: WhatsAppSender }): Promise<void> {
+async function listGroups(options: { config: AppConfig; sender: WhatsAppSender }): Promise<void> {
+  await assertServeNotRunning(options.config.dataDir);
   await options.sender.connect();
   const groups = await options.sender.listGroups();
 
@@ -123,6 +179,7 @@ async function sendNow(options: {
   sender: WhatsAppSender;
   stateStore: StateStore;
 }): Promise<void> {
+  await assertServeNotRunning(options.config.dataDir);
   const groupJid = requireGroupJid(options.config);
   await options.sender.connect();
 
@@ -184,9 +241,17 @@ Commands:
 `);
 }
 
-function waitForever(): Promise<void> {
+function waitForShutdown(dataDir: string): Promise<void> {
   return new Promise((resolve) => {
-    process.once('SIGINT', resolve);
-    process.once('SIGTERM', resolve);
+    const shutdown = () => {
+      void releaseServeLock(dataDir).finally(resolve);
+    };
+
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
   });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

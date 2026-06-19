@@ -24,6 +24,8 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
   private pairingCodeRequested = false;
   private reconnecting = false;
   private closingIntentionally = false;
+  private connectionTask?: Promise<void>;
+  private loggedOut = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -35,6 +37,21 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
       return;
     }
 
+    if (this.connectionTask) {
+      await this.connectionTask;
+      return;
+    }
+
+    this.connectionTask = this.openConnection();
+    try {
+      await this.connectionTask;
+    } finally {
+      this.connectionTask = undefined;
+    }
+  }
+
+  private async openConnection(): Promise<void> {
+    await this.tearDownSocket();
     await this.resetAuthOnceIfRequested();
     await fs.mkdir(this.config.authDir, { recursive: true });
 
@@ -45,6 +62,7 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
     this.closeReason = undefined;
     this.pairingCodeRequested = false;
     this.closingIntentionally = false;
+    this.loggedOut = false;
 
     const socket = makeWASocket({
       version,
@@ -94,13 +112,86 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
 
         if (shouldReconnect) {
           void this.reconnect();
+        } else if (isConflict) {
+          void this.reconnectAfterConflict();
         } else {
+          if (code === DisconnectReason.loggedOut || code === 401) {
+            this.loggedOut = true;
+          }
           this.closeReason = new Error(message);
         }
       }
     });
 
     await this.waitForOpen();
+  }
+
+  private async reconnectAfterConflict(): Promise<void> {
+    if (this.reconnecting) {
+      return;
+    }
+
+    this.reconnecting = true;
+    this.logger.warn('scheduling WhatsApp reconnect after session conflict');
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      if (this.status === 'open') {
+        return;
+      }
+
+      this.socket = undefined;
+      this.closeReason = undefined;
+      await this.connect();
+    } catch (error) {
+      this.closeReason = error instanceof Error ? error : new Error(String(error));
+      this.logger.error({ error }, 'WhatsApp reconnect after conflict failed');
+    } finally {
+      this.reconnecting = false;
+    }
+  }
+
+  async ensureConnected(): Promise<void> {
+    if (this.status === 'open' && this.socket) {
+      return;
+    }
+
+    if (this.connectionTask) {
+      await this.connectionTask;
+      if (this.status === 'open' && this.socket) {
+        return;
+      }
+    }
+
+    if (this.isLoggedOut()) {
+      throw this.closeReason ?? new Error('WhatsApp session is logged out. Re-pair and restart.');
+    }
+
+    this.socket = undefined;
+    this.closeReason = undefined;
+    await this.connect();
+  }
+
+  private async tearDownSocket(): Promise<void> {
+    if (!this.socket) {
+      return;
+    }
+
+    try {
+      this.socket.end(undefined);
+    } catch {
+      // Ignore errors while closing a stale socket.
+    }
+
+    this.socket = undefined;
+    this.status = 'closed';
+  }
+
+  isConnected(): boolean {
+    return this.status === 'open' && Boolean(this.socket);
+  }
+
+  isLoggedOut(): boolean {
+    return this.loggedOut;
   }
 
   private async reconnect(): Promise<void> {

@@ -165,6 +165,14 @@ npm start
 - Failed sends retry up to 3 times; state is updated only after WhatsApp accepts the message.
 - Never commit `.env` or `data/` — both are in `.gitignore`.
 
+## Resilience
+
+- **Connection watchdog** — every 5 minutes, reconnects WhatsApp if the session drops.
+- **Scheduled send retries** — at 6:00 AM, retries up to 3 times (5 minutes apart) before giving up.
+- **Session conflict recovery** — reconnects automatically after temporary WhatsApp session conflicts.
+- **Serve lock** — `send-now` and `list-groups` refuse to run while `serve` is active, so SSH tests do not steal the live session.
+- **After re-pairing** — run `fly machine restart` so `serve` loads the new auth session.
+
 ## Development
 
 ```bash
