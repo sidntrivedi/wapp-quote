@@ -26,6 +26,7 @@ describe('runCommand', () => {
       connect: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
       ensureConnected: vi.fn().mockResolvedValue(undefined),
+      isConnected: vi.fn().mockReturnValue(true),
       sendText: vi.fn().mockResolvedValue({ messageId: 'msg-1' }),
       listGroups: vi.fn().mockResolvedValue([]),
       isLoggedOut: vi.fn().mockReturnValue(false),
