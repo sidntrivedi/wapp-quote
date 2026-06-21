@@ -167,8 +167,8 @@ npm start
 
 ## Resilience
 
-- **Connection watchdog** — every 5 minutes, reconnects WhatsApp if the session drops.
 - **Scheduled send retries** — at 6:00 AM, retries up to 3 times (5 minutes apart) before giving up.
+- **Missed-cron catch-up** — if `node-cron` misses the 06:00 slot (timer drift / CPU scheduling), the bot retries on `execution:missed` and polls every 15 minutes until today's quote is sent, but only within 4 hours of `QUOTE_TIME` (until 10:00 IST by default). After that it logs once and skips today.
 - **Session conflict recovery** — reconnects automatically after temporary WhatsApp session conflicts.
 - **Serve lock** — `send-now` and `list-groups` refuse to run while `serve` is active, so SSH tests do not steal the live session.
 - **After re-pairing** — run `fly machine restart` so `serve` loads the new auth session.

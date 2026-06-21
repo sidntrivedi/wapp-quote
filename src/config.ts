@@ -6,6 +6,10 @@ import { approvedWikiquotePages } from './approved-authors.js';
 
 dotenv.config();
 
+const booleanEnv = z
+  .enum(['true', 'false'])
+  .transform((value) => value === 'true');
+
 const envSchema = z.object({
   WHATSAPP_GROUP_JID: z.string().trim().optional(),
   QUOTE_SOURCE: z.enum(['wikiquote', 'local']).default('wikiquote'),
@@ -21,14 +25,15 @@ const envSchema = z.object({
   DATA_DIR: z.string().trim().min(1).default('./data'),
   AUTH_DIR: z.string().trim().min(1).optional(),
   STATE_FILE: z.string().trim().min(1).optional(),
-  RESET_AUTH_ON_START: z.coerce.boolean().default(false),
+  RESET_AUTH_ON_START: booleanEnv.default('false'),
   RESET_AUTH_TOKEN: z.string().trim().optional(),
   AI_PROVIDER: z.enum(['none', 'ollama-cloud']).default('none'),
   OLLAMA_BASE_URL: z.string().url().default('https://ollama.com/api'),
   OLLAMA_MODEL: z.string().trim().min(1).default('gpt-oss:120b'),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
-  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info')
+  LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
+  QUOTE_CATCH_UP: booleanEnv.default('true')
 });
 
 export type AppConfig = {
@@ -54,6 +59,7 @@ export type AppConfig = {
   aiTimeoutMs: number;
   aiTemperature: number;
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
+  quoteCatchUp: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -82,7 +88,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ollamaModel: parsed.OLLAMA_MODEL,
     aiTimeoutMs: parsed.AI_TIMEOUT_MS,
     aiTemperature: parsed.AI_TEMPERATURE,
-    logLevel: parsed.LOG_LEVEL
+    logLevel: parsed.LOG_LEVEL,
+    quoteCatchUp: parsed.QUOTE_CATCH_UP
   };
 }
 

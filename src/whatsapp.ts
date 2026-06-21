@@ -13,6 +13,7 @@ import qrcode from 'qrcode-terminal';
 import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
 import { requirePairingPhoneNumber } from './config.js';
+import { shouldIgnoreInboundJid } from './inbound-jid.js';
 import type { SendResult, WhatsAppSender } from './types.js';
 
 type ConnectionStatus = 'connecting' | 'open' | 'closed';
@@ -72,7 +73,13 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
       auth: {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, this.logger)
-      }
+      },
+      markOnlineOnConnect: false,
+      fireInitQueries: false,
+      syncFullHistory: false,
+      shouldSyncHistoryMessage: () => false,
+      shouldIgnoreJid: shouldIgnoreInboundJid,
+      generateHighQualityLinkPreview: false
     });
 
     this.socket = socket;

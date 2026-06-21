@@ -9,7 +9,6 @@ import { runDailyQuote } from './quote-runner.js';
 import { renderQuoteMessage } from './message.js';
 import { localDateKey } from './date.js';
 import { startDailySchedule } from './scheduler.js';
-import { startConnectionWatchdog } from './connection-watchdog.js';
 import { acquireServeLock, assertServeNotRunning, releaseServeLock } from './serve-lock.js';
 import { StateStore } from './state-store.js';
 import { enrichQuoteReflection } from './ai-reflection.js';
@@ -64,12 +63,16 @@ async function serve(options: {
   const groupJid = requireGroupJid(options.config);
   await options.sender.connect();
 
-  startConnectionWatchdog({ sender: options.sender, logger: options.logger });
-
   startDailySchedule({
     quoteTime: options.config.quoteTime,
     timeZone: options.config.timeZone,
     logger: options.logger,
+    catchUpEnabled: options.config.quoteCatchUp,
+    hasSentToday: async () => {
+      const state = await options.stateStore.load();
+      const dateKey = localDateKey(new Date(), options.config.timeZone);
+      return Boolean(state.sentDates[dateKey]);
+    },
     task: async () => {
       await runScheduledDailyQuote({
         config: options.config,
