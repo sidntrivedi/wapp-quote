@@ -88,4 +88,31 @@ describe('startDailySchedule', () => {
 
     handle.stop();
   });
+
+  it('does not start interval catch-up when disabled', async () => {
+    const task = vi.fn().mockResolvedValue(undefined);
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
+    };
+
+    const handle = startDailySchedule({
+      quoteTime: '06:00',
+      timeZone: 'Asia/Kolkata',
+      logger: logger as never,
+      hasSentToday: async () => false,
+      catchUpEnabled: false,
+      task
+    });
+
+    vi.setSystemTime(new Date('2026-06-21T01:00:00.000Z'));
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(task).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith('interval catch-up disabled; only cron and execution:missed will send');
+
+    handle.stop();
+  });
 });

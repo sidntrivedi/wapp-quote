@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, requireGroupJid } from '../src/config.js';
+import { loadConfig, requireGroupJid, requirePairingPhoneNumber } from '../src/config.js';
 
 describe('config', () => {
   it('loads defaults', () => {
@@ -33,5 +33,47 @@ describe('config', () => {
   it('parses RESET_AUTH_ON_START=false from env strings', () => {
     expect(loadConfig({ RESET_AUTH_ON_START: 'false' }).resetAuthOnStart).toBe(false);
     expect(loadConfig({ RESET_AUTH_ON_START: 'true' }).resetAuthOnStart).toBe(true);
+  });
+
+  it('parses custom wikiquote pages and categories', () => {
+    const config = loadConfig({
+      WIKIQUOTE_PAGES: 'कबीर|कबीर,रहीम',
+      WIKIQUOTE_CATEGORIES: 'श्रेणी:लेखक, दार्शनिक'
+    });
+
+    expect(config.wikiquotePages).toEqual([
+      { page: 'कबीर', author: 'कबीर' },
+      { page: 'रहीम', author: 'रहीम' }
+    ]);
+    expect(config.wikiquoteCategories).toEqual(['लेखक', 'दार्शनिक']);
+  });
+
+  it('rejects invalid wikiquote page entries', () => {
+    expect(() => loadConfig({ WIKIQUOTE_PAGES: '|missing-page' })).toThrow(/Invalid WIKIQUOTE_PAGES entry/);
+  });
+
+  it('resolves data, auth, and state paths from DATA_DIR', () => {
+    const config = loadConfig({ DATA_DIR: './custom-data' });
+
+    expect(config.dataDir).toMatch(/custom-data$/);
+    expect(config.authDir).toMatch(/custom-data\/auth$/);
+    expect(config.stateFile).toMatch(/custom-data\/state\.json$/);
+  });
+
+  it('requires a pairing phone number only for pairing auth', () => {
+    const pairingConfig = loadConfig({ AUTH_METHOD: 'pairing' });
+    const qrConfig = loadConfig({ AUTH_METHOD: 'qr' });
+
+    expect(() => requirePairingPhoneNumber(pairingConfig)).toThrow(/PAIRING_PHONE_NUMBER/);
+    expect(() => requirePairingPhoneNumber(qrConfig)).toThrow(/AUTH_METHOD=pairing/);
+    expect(requirePairingPhoneNumber(loadConfig({ AUTH_METHOD: 'pairing', PAIRING_PHONE_NUMBER: '919999999999' }))).toBe(
+      '919999999999'
+    );
+  });
+
+  it('accepts a valid group jid', () => {
+    expect(requireGroupJid(loadConfig({ WHATSAPP_GROUP_JID: '120363361658284910@g.us' }))).toBe(
+      '120363361658284910@g.us'
+    );
   });
 });

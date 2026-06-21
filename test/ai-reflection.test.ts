@@ -96,4 +96,32 @@ describe('enrichQuoteReflection', () => {
 
     expect(enriched.reflection).toBe(quote.reflection);
   });
+
+  it('falls back when the AI request fails', async () => {
+    const warn = vi.fn();
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('network timeout'));
+
+    const enriched = await enrichQuoteReflection({
+      quote,
+      config: baseConfig,
+      fetchImpl,
+      logger: { warn } as never
+    });
+
+    expect(enriched.reflection).toBe(quote.reflection);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ quoteId: 'q1' }),
+      'AI reflection failed; using quote fallback reflection'
+    );
+  });
+
+  it('falls back when the AI response is malformed', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: '{"notReflection":"oops"}' } }))
+    );
+
+    const enriched = await enrichQuoteReflection({ quote, config: baseConfig, fetchImpl });
+
+    expect(enriched.reflection).toBe(quote.reflection);
+  });
 });

@@ -4,6 +4,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
-    restoreMocks: true
+    restoreMocks: true,
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: ['src/cli.ts', 'src/scripts/**', 'src/whatsapp.ts']
+    }
   }
 });

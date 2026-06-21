@@ -93,4 +93,44 @@ describe('runDailyQuote', () => {
 
     expect(sendText).toHaveBeenCalledWith('123@g.us', 'rendered:q1');
   });
+
+  it('forces a resend when already sent today', async () => {
+    const sendText = vi.fn().mockResolvedValue({ messageId: 'message-4' });
+    const state: BotState = {
+      rotationIndex: 0,
+      usedQuoteIds: ['q1'],
+      sentDates: {
+        '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:31:00.000Z' }
+      }
+    };
+
+    const result = await runDailyQuote({
+      sender: { sendText },
+      state,
+      groupJid: '123@g.us',
+      now: new Date('2026-06-16T05:00:00.000Z'),
+      timeZone: 'Asia/Kolkata',
+      force: true,
+      selectQuote: () => ({ quote: quoteBank[0], nextState: state })
+    });
+
+    expect(result.status).toBe('sent');
+    expect(sendText).toHaveBeenCalledOnce();
+  });
+
+  it('uses the default quote selector and renderer when omitted', async () => {
+    const sendText = vi.fn().mockResolvedValue({ messageId: 'message-5' });
+
+    const result = await runDailyQuote({
+      sender: { sendText },
+      state: { rotationIndex: 0, usedQuoteIds: [], sentDates: {} },
+      groupJid: '123@g.us',
+      now: new Date('2026-06-16T00:31:00.000Z'),
+      timeZone: 'Asia/Kolkata'
+    });
+
+    expect(result.status).toBe('sent');
+    expect(sendText).toHaveBeenCalledOnce();
+    expect(String(sendText.mock.calls[0]?.[1])).toContain('🌅 सुप्रभात');
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { selectQuote } from '../src/quote-source.js';
 import type { BotState } from '../src/types.js';
 
@@ -52,5 +52,89 @@ describe('selectQuote', () => {
     });
 
     expect(result.quote.author).toBe('रहीम');
+  });
+
+  it('falls back to the local bank when wikiquote fetch fails', async () => {
+    const state: BotState = { rotationIndex: 0, usedQuoteIds: [], sentDates: {} };
+    const logger = { warn: vi.fn() };
+
+    const result = await selectQuote({
+      config: {
+        quoteSource: 'wikiquote',
+        wikiquoteLanguage: 'hi',
+        wikiquoteMode: 'pages',
+        wikiquoteCategories: [],
+        wikiquotePages: [{ page: 'कबीर', author: 'कबीर' }],
+        wikiquoteRandomPageLimit: 1
+      },
+      state,
+      logger: logger as never,
+      fetchImpl: async () => {
+        throw new Error('network down');
+      }
+    });
+
+    expect(result.quote.id).toBeTruthy();
+    expect(result.nextState.usedQuoteIds).toContain(result.quote.id);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('uses the local bank directly when quote source is local', async () => {
+    const state: BotState = { rotationIndex: 0, usedQuoteIds: [], sentDates: {} };
+
+    const result = await selectQuote({
+      config: {
+        quoteSource: 'local',
+        wikiquoteLanguage: 'hi',
+        wikiquoteMode: 'pages',
+        wikiquoteCategories: [],
+        wikiquotePages: [],
+        wikiquoteRandomPageLimit: 1
+      },
+      state
+    });
+
+    expect(result.quote.id).toBeTruthy();
+    expect(result.nextState.usedQuoteIds).toContain(result.quote.id);
+  });
+
+  it('falls back when wikiquote returns no usable quotes', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          parse: {
+            title: 'कबीर',
+            wikitext: {
+              '*': `
+== परिचय ==
+यह पृष्ठ केवल जीवनी विवरण है।
+`
+            }
+          }
+        })
+      );
+
+    const state: BotState = { rotationIndex: 0, usedQuoteIds: [], sentDates: {} };
+    const logger = { warn: vi.fn() };
+
+    const result = await selectQuote({
+      config: {
+        quoteSource: 'wikiquote',
+        wikiquoteLanguage: 'hi',
+        wikiquoteMode: 'pages',
+        wikiquoteCategories: [],
+        wikiquotePages: [{ page: 'कबीर', author: 'कबीर' }],
+        wikiquoteRandomPageLimit: 1
+      },
+      state,
+      logger: logger as never,
+      fetchImpl
+    });
+
+    expect(result.quote.id).toBeTruthy();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ count: 0 }),
+      'wikiquote returned no unused safe quotes; falling back to local bank'
+    );
   });
 });

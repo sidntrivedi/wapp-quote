@@ -43,4 +43,28 @@ describe('date helpers', () => {
       reason: 'window-expired'
     });
   });
+
+  it('reports before-quote-time when the window has not opened', () => {
+    const beforeQuoteTime = new Date('2026-06-21T00:29:00.000Z');
+
+    expect(getCatchUpEligibility(beforeQuoteTime, '06:00', 'Asia/Kolkata')).toMatchObject({
+      eligible: false,
+      reason: 'before-quote-time',
+      minutesPastQuoteTime: -1
+    });
+  });
+
+  it('supports a custom catch-up grace period', () => {
+    const withinTwoHours = new Date('2026-06-21T02:30:00.000Z');
+    const afterTwoHours = new Date('2026-06-21T02:31:00.000Z');
+
+    expect(getCatchUpEligibility(withinTwoHours, '06:00', 'Asia/Kolkata', 2)).toMatchObject({
+      eligible: true,
+      reason: 'within-window'
+    });
+    expect(getCatchUpEligibility(afterTwoHours, '06:00', 'Asia/Kolkata', 2)).toMatchObject({
+      eligible: false,
+      reason: 'window-expired'
+    });
+  });
 });

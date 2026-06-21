@@ -12,4 +12,9 @@ describe('shouldIgnoreInboundJid', () => {
   it('does not ignore unknown service jids', () => {
     expect(shouldIgnoreInboundJid('123@hosted')).toBe(false);
   });
+
+  it('ignores device-prefixed jids', () => {
+    expect(shouldIgnoreInboundJid('0:919956622300@s.whatsapp.net')).toBe(true);
+    expect(shouldIgnoreInboundJid('1:120363361658284910@g.us')).toBe(true);
+  });
 });

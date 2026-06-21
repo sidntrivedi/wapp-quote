@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractQuotesFromWikitext, fetchRandomWikiquoteAuthorPages, fetchWikiquoteQuotes } from '../src/wikiquote.js';
+import { extractQuotesFromWikitext, fetchRandomWikiquoteAuthorPages, fetchRandomWikiquotePages, fetchWikiquoteQuotes } from '../src/wikiquote.js';
 
 describe('extractQuotesFromWikitext', () => {
   it('extracts safe bullet quotes with continuation lines', () => {
@@ -134,5 +134,29 @@ describe('fetchRandomWikiquoteAuthorPages', () => {
 
     expect(pages).toHaveLength(3);
     expect(pages.map((page) => page.author).sort()).toEqual(['कबीर', 'रहीम', 'हेलेन केलर']);
+  });
+});
+
+describe('fetchRandomWikiquotePages', () => {
+  it('returns random page titles as author pages', async () => {
+    const fetchImpl = async () =>
+      new Response(
+        JSON.stringify({
+          query: {
+            random: [{ title: 'कबीर' }, { title: 'रहीम' }]
+          }
+        })
+      );
+
+    const pages = await fetchRandomWikiquotePages({
+      language: 'hi',
+      limit: 2,
+      fetchImpl
+    });
+
+    expect(pages).toEqual([
+      { page: 'कबीर', author: 'कबीर' },
+      { page: 'रहीम', author: 'रहीम' }
+    ]);
   });
 });
