@@ -4,6 +4,10 @@ A daily Hindi quote bot for WhatsApp groups. Posts one uplifting message per day
 
 Built with [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web protocol). Intended for small, consenting groups — one message per day, no bulk messaging.
 
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — system design, module map, runtime flows, and agent onboarding
+
 ## Features
 
 - **Daily scheduling** — in-process cron (`node-cron`), default 06:00 IST
