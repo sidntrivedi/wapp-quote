@@ -30,7 +30,7 @@ describe('StateStore', () => {
       JSON.stringify({
         rotationIndex: 3,
         usedQuoteIds: ['q1', 42, 'q2'],
-        sentDates: { '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:00:00.000Z' } }
+        sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
       }),
       'utf8'
     );
@@ -39,7 +39,7 @@ describe('StateStore', () => {
     await expect(store.load()).resolves.toEqual({
       rotationIndex: 3,
       usedQuoteIds: ['q1', 'q2'],
-      sentDates: { '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:00:00.000Z' } }
+      sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
     });
   });
 
@@ -56,7 +56,7 @@ describe('StateStore', () => {
     const state: BotState = {
       rotationIndex: 1,
       usedQuoteIds: ['q1'],
-      sentDates: { '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:00:00.000Z' } }
+      sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
     };
 
     await store.save(state);

@@ -19,7 +19,7 @@ export class StateStore {
       return {
         rotationIndex: typeof parsed.rotationIndex === 'number' && Number.isInteger(parsed.rotationIndex) ? parsed.rotationIndex : 0,
         usedQuoteIds: Array.isArray(parsed.usedQuoteIds) ? parsed.usedQuoteIds.filter((id): id is string => typeof id === 'string') : [],
-        sentDates: parsed.sentDates ?? {}
+        sentDates: normalizeSentDates(parsed.sentDates)
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -36,4 +36,25 @@ export class StateStore {
     await fs.writeFile(tmpPath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
     await fs.rename(tmpPath, this.filePath);
   }
+}
+
+function normalizeSentDates(
+  sentDates: Record<string, Partial<BotState['sentDates'][string]>> | undefined
+): BotState['sentDates'] {
+  const normalized: BotState['sentDates'] = {};
+
+  for (const [dateKey, entry] of Object.entries(sentDates ?? {})) {
+    if (!entry?.quoteId || !entry.sentAt) {
+      continue;
+    }
+
+    normalized[dateKey] = {
+      quoteId: entry.quoteId,
+      author: typeof entry.author === 'string' ? entry.author : '',
+      sentAt: entry.sentAt,
+      ...(entry.messageId ? { messageId: entry.messageId } : {})
+    };
+  }
+
+  return normalized;
 }

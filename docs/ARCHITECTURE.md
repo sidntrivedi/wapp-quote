@@ -40,6 +40,7 @@ graph TB
 
     subgraph external [External Services]
         WQ[hi.wikiquote.org MediaWiki API]
+        OAI[OpenAI API optional]
         OLL[Ollama Cloud API optional]
         WANET[WhatsApp Servers]
     end
@@ -51,6 +52,7 @@ graph TB
     WA --> AUTH
     WA --> WANET
     RUN --> WQ
+    RUN --> OAI
     RUN --> OLL
     RUN --> STATE
     CMD --> LOCK
@@ -222,7 +224,7 @@ flowchart TD
     Local --> Done
 ```
 
-- `usedQuoteIds` tracks last 1000 sent IDs to avoid repeats
+- `usedQuoteIds` tracks last 5000 sent IDs to avoid repeats
 - `rotationIndex` advances round-robin position
 - Wikiquote modes (`WIKIQUOTE_MODE`): `pages` (approved list, recommended), `authors` (category random), `any` (random page)
 
@@ -254,7 +256,7 @@ type Quote = {
 
 type BotState = {
   rotationIndex: number;
-  usedQuoteIds: string[];  // last 1000 kept
+  usedQuoteIds: string[];  // last 5000 kept
   sentDates: Record<string, { quoteId: string; sentAt: string; messageId?: string }>;
 };
 
@@ -298,7 +300,12 @@ Rendered by [`src/message.ts`](../src/message.ts):
 🌿 आज की दिशा: {reflection}
 ```
 
-When `AI_PROVIDER=ollama-cloud`, [`src/ai-reflection.ts`](../src/ai-reflection.ts) may rewrite **only** the reflection line (`आज की दिशा`). Quote text and author are never modified. On AI failure or validation error, the built-in reflection from the quote source is used.
+When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, [`src/ai-reflection.ts`](../src/ai-reflection.ts) may rewrite **only** the reflection line (`आज की दिशा`). Quote text and author are never modified. On AI failure or validation error, the built-in reflection from the quote source is used.
+
+| Provider | API | Default model | Env key |
+|----------|-----|---------------|---------|
+| `openai` | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `OPENAI_API_KEY` |
+| `ollama-cloud` | `{OLLAMA_BASE_URL}/chat` | `gpt-oss:120b` | `OLLAMA_API_KEY` |
 
 ---
 
@@ -315,11 +322,11 @@ See [`.env.example`](../.env.example) for the canonical full list. Grouped summa
 | Schedule | `QUOTE_TIME`, `TZ`, `QUOTE_CATCH_UP` | `06:00`, `Asia/Kolkata`, `true` |
 | Auth | `AUTH_METHOD`, `PAIRING_PHONE_NUMBER` | `pairing` |
 | Paths | `DATA_DIR`, `AUTH_DIR`, `STATE_FILE` | `./data`, `./data/auth`, `./data/state.json` |
-| AI | `AI_PROVIDER`, `OLLAMA_*`, `AI_TIMEOUT_MS` | `none` |
+| AI | `AI_PROVIDER`, `OPENAI_*`, `OLLAMA_*`, `AI_TIMEOUT_MS` | `none` |
 | Logging | `LOG_LEVEL` | `info` |
 | Deploy reset | `RESET_AUTH_ON_START`, `RESET_AUTH_TOKEN` | `false` |
 
-Fly.io production overrides many defaults in [`fly.toml`](../fly.toml); secrets (`PAIRING_PHONE_NUMBER`, `WHATSAPP_GROUP_JID`, `OLLAMA_API_KEY`) are set via `fly secrets set`.
+Fly.io production overrides many defaults in [`fly.toml`](../fly.toml); secrets (`PAIRING_PHONE_NUMBER`, `WHATSAPP_GROUP_JID`, `OPENAI_API_KEY` or `OLLAMA_API_KEY`) are set via `fly secrets set`.
 
 ---
 

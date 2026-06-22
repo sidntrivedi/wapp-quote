@@ -91,7 +91,9 @@ See `.env.example` for the full list. Key variables:
 | `QUOTE_SOURCE` | `wikiquote` | `wikiquote` or `local` |
 | `WIKIQUOTE_LANGUAGE` | `hi` | Hindi Wikiquote (`hi.wikiquote.org`) |
 | `WIKIQUOTE_MODE` | `pages` | `pages`, `authors`, or `any` |
-| `AI_PROVIDER` | `none` | `none` or `ollama-cloud` |
+| `AI_PROVIDER` | `none` | `none`, `openai`, or `ollama-cloud` |
+| `OPENAI_API_KEY` | — | Required when `AI_PROVIDER=openai` |
+| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI chat model |
 | `OLLAMA_API_KEY` | — | Required when `AI_PROVIDER=ollama-cloud` |
 
 **Wikiquote modes**
@@ -104,7 +106,9 @@ Override the author list with `WIKIQUOTE_PAGES=page\|author,page\|author`.
 
 **AI reflection**
 
-When `AI_PROVIDER=ollama-cloud`, the bot calls Ollama Cloud to generate the reflection line (`आज की दिशा`). The quote and author are never modified. On failure or validation error, the built-in fallback is used.
+When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, the bot calls the configured provider to generate the reflection line (`आज की दिशा`). The quote and author are never modified. On failure or validation error, the built-in fallback is used.
+
+Recommended for OpenAI: `AI_PROVIDER=openai` with `OPENAI_MODEL=gpt-4o-mini` (~1 call/day, very low cost).
 
 ## Deployment
 
@@ -124,7 +128,7 @@ fly volumes create wapp_quote_data --size 1 --region sin --app <your-app-name>
 fly secrets set \
   PAIRING_PHONE_NUMBER=91XXXXXXXXXX \
   WHATSAPP_GROUP_JID=120363xxxxxxxxxxxxxx@g.us \
-  OLLAMA_API_KEY=your_key \
+  OPENAI_API_KEY=your_key \
   --app <your-app-name>
 fly deploy --app <your-app-name>
 ```

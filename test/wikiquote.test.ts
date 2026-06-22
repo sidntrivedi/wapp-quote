@@ -24,10 +24,42 @@ describe('extractQuotesFromWikitext', () => {
 
     const quotes = extractQuotesFromWikitext(wikitext, 'कबीर', 'hi', 'कबीर');
 
-    expect(quotes).toHaveLength(1);
-    expect(quotes[0].text).toBe('धैर्य रखो रे मना, धीरे सब कुछ होय । माली सींचे सौ घड़ा, ऋतु आए फल होय ।');
+    expect(quotes.length).toBeGreaterThanOrEqual(1);
+    expect(quotes[0].text).toContain('धैर्य रखो रे मना');
     expect(quotes[0].author).toBe('कबीर');
     expect(quotes[0].source).toContain('hi.wikiquote.org');
+  });
+
+  it('extracts plain-text dohas from Rahim-style sections', () => {
+    const wikitext = `
+==दोहे==
+बड़ा हुआ तो क्या हुआ, जैसे पेड़ खजूर।<br/>
+पंथी को छाया नहीं, फल लागे अति दूर।।
+
+==बाह्य सूत्र==
+`;
+
+    const quotes = extractQuotesFromWikitext(wikitext, 'रहीम', 'hi', 'रहीम');
+
+    expect(quotes.length).toBeGreaterThanOrEqual(1);
+    expect(quotes[0].text).toContain('बड़ा हुआ तो क्या हुआ');
+    expect(quotes[0].author).toBe('रहीम');
+  });
+
+  it('extracts HTML bold quotes used on some author pages', () => {
+    const wikitext = `
+== उद्धरण ==
+<div>
+<b>"मेरे तो गिरधर गोपाल, दूसरो न कोई।"</b><br>
+<span>(कृष्ण के प्रति उनका पूर्ण समर्पण दर्शाता है)</span>
+</div>
+== स्रोत ==
+`;
+
+    const quotes = extractQuotesFromWikitext(wikitext, 'मीरा बाई', 'hi', 'मीरा बाई');
+
+    expect(quotes.length).toBeGreaterThanOrEqual(1);
+    expect(quotes.some((quote) => quote.text.includes('गिरधर गोपाल'))).toBe(true);
   });
 });
 

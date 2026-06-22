@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
 import { requireGroupJid } from './config.js';
 import { getQuoteForPreview } from './quotes.js';
-import { selectQuote } from './quote-source.js';
+import { ScheduledAuthorUnavailableError, selectQuote } from './quote-source.js';
 import { runDailyQuote } from './quote-runner.js';
 import { renderQuoteMessage } from './message.js';
 import { localDateKey } from './date.js';
@@ -213,15 +213,27 @@ async function sendNow(options: {
 
 async function preview(options: { config: AppConfig; logger: Logger; stateStore: StateStore }): Promise<void> {
   const state = await options.stateStore.load();
-  const { quote } =
-    options.config.quoteSource === 'local'
-      ? { quote: getQuoteForPreview(state) }
-      : await selectQuote({
-          config: options.config,
-          state,
-          logger: options.logger
-        });
-  console.log(await renderMessageWithAiReflection(quote, options.config, options.logger));
+
+  try {
+    const { quote } =
+      options.config.quoteSource === 'local'
+        ? { quote: getQuoteForPreview(state) }
+        : await selectQuote({
+            config: options.config,
+            state,
+            logger: options.logger,
+            preview: true
+          });
+    console.log(await renderMessageWithAiReflection(quote, options.config, options.logger));
+  } catch (error) {
+    if (error instanceof ScheduledAuthorUnavailableError) {
+      console.error(`Preview unavailable: ${error.message}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    throw error;
+  }
 }
 
 async function renderMessageWithAiReflection(quote: Quote, config: AppConfig, logger: Logger): Promise<string> {

@@ -35,6 +35,7 @@ export async function runDailyQuote(options: RunDailyQuoteOptions): Promise<RunD
       ...nextState.sentDates,
       [dateKey]: {
         quoteId: quote.id,
+        author: quote.author,
         sentAt: options.now.toISOString(),
         messageId: result.messageId
       }

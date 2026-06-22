@@ -27,9 +27,10 @@ const envSchema = z.object({
   STATE_FILE: z.string().trim().min(1).optional(),
   RESET_AUTH_ON_START: booleanEnv.default('false'),
   RESET_AUTH_TOKEN: z.string().trim().optional(),
-  AI_PROVIDER: z.enum(['none', 'ollama-cloud']).default('none'),
+  AI_PROVIDER: z.enum(['none', 'ollama-cloud', 'openai']).default('none'),
   OLLAMA_BASE_URL: z.string().url().default('https://ollama.com/api'),
   OLLAMA_MODEL: z.string().trim().min(1).default('gpt-oss:120b'),
+  OPENAI_MODEL: z.string().trim().min(1).default('gpt-4o-mini'),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
@@ -53,9 +54,10 @@ export type AppConfig = {
   stateFile: string;
   resetAuthOnStart: boolean;
   resetAuthToken?: string;
-  aiProvider: 'none' | 'ollama-cloud';
+  aiProvider: 'none' | 'ollama-cloud' | 'openai';
   ollamaBaseUrl: string;
   ollamaModel: string;
+  openaiModel: string;
   aiTimeoutMs: number;
   aiTemperature: number;
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
@@ -86,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     aiProvider: parsed.AI_PROVIDER,
     ollamaBaseUrl: parsed.OLLAMA_BASE_URL.replace(/\/$/, ''),
     ollamaModel: parsed.OLLAMA_MODEL,
+    openaiModel: parsed.OPENAI_MODEL,
     aiTimeoutMs: parsed.AI_TIMEOUT_MS,
     aiTemperature: parsed.AI_TEMPERATURE,
     logLevel: parsed.LOG_LEVEL,

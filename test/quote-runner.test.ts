@@ -32,7 +32,7 @@ describe('runDailyQuote', () => {
 
     if (result.status === 'sent') {
       expect(result.dateKey).toBe('2026-06-16');
-      expect(result.nextState.sentDates['2026-06-16']).toMatchObject({ quoteId: 'q1', messageId: 'message-1' });
+      expect(result.nextState.sentDates['2026-06-16']).toMatchObject({ quoteId: 'q1', author: 'कबीर', messageId: 'message-1' });
     }
   });
 
@@ -42,7 +42,7 @@ describe('runDailyQuote', () => {
       rotationIndex: 0,
       usedQuoteIds: ['q1'],
       sentDates: {
-        '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:31:00.000Z' }
+        '2026-06-16': { quoteId: 'q1', author: 'कबीर', sentAt: '2026-06-16T00:31:00.000Z' }
       }
     };
 
@@ -100,7 +100,7 @@ describe('runDailyQuote', () => {
       rotationIndex: 0,
       usedQuoteIds: ['q1'],
       sentDates: {
-        '2026-06-16': { quoteId: 'q1', sentAt: '2026-06-16T00:31:00.000Z' }
+        '2026-06-16': { quoteId: 'q1', author: 'कबीर', sentAt: '2026-06-16T00:31:00.000Z' }
       }
     };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getBlockedTerms, isMorningSuitableQuoteText, isSafeQuoteText } from '../src/quote-filter.js';
+import { getBlockedTerms, isClassicalQuoteText, isHazardousQuoteText, isMorningSuitableQuoteText, isSafeQuoteText } from '../src/quote-filter.js';
 
 describe('isSafeQuoteText', () => {
   it('accepts uplifting Hindi text', () => {
@@ -27,6 +27,28 @@ describe('isMorningSuitableQuoteText', () => {
 
   it('requires positive terms as whole Hindi words', () => {
     expect(isMorningSuitableQuoteText('यह एक सामान्य वाक्य है बिना उत्साह के।')).toBe(false);
+  });
+});
+
+describe('isClassicalQuoteText', () => {
+  it('accepts short sourced dohas without an explicit positive keyword', () => {
+    expect(isClassicalQuoteText('धीरे-धीरे रे मना, धीरे सब कुछ होय ।')).toBe(true);
+    expect(isClassicalQuoteText('बड़ा हुआ तो क्या हुआ, जैसे पेड़ खजूर।')).toBe(true);
+    expect(isClassicalQuoteText('मेरे तो गिरधर गोपाल, दूसरो न कोई।')).toBe(true);
+  });
+
+  it('rejects commentary and unsafe classical text', () => {
+    expect(isClassicalQuoteText('दुःख में सुमिरन सब करे सुख में करे न कोय।')).toBe(false);
+    expect(isClassicalQuoteText('यह कथन विचारों की शक्ति पर प्रकाश डालता है।')).toBe(false);
+    expect(isClassicalQuoteText('राजनीति पर यह एक टिप्पणी है।')).toBe(false);
+  });
+});
+
+describe('isHazardousQuoteText', () => {
+  it('flags blocked and politically unsafe content', () => {
+    expect(isHazardousQuoteText('दुःख में सुमिरन सब करे।')).toBe(true);
+    expect(isHazardousQuoteText('राजनीति पर यह एक टिप्पणी है।')).toBe(true);
+    expect(isHazardousQuoteText('धैर्य और प्रेम से जीवन सुंदर बनता है।')).toBe(false);
   });
 });
 

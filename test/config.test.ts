@@ -16,6 +16,13 @@ describe('config', () => {
     expect(config.wikiquotePages.map((page) => page.author)).toContain('अल्बर्ट आइंस्टीन');
   });
 
+  it('loads openai defaults', () => {
+    const config = loadConfig({ AI_PROVIDER: 'openai' });
+
+    expect(config.aiProvider).toBe('openai');
+    expect(config.openaiModel).toBe('gpt-4o-mini');
+  });
+
   it('rejects missing group jid when sending is required', () => {
     expect(() => requireGroupJid(loadConfig({}))).toThrow(/WHATSAPP_GROUP_JID/);
   });

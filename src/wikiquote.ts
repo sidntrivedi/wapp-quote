@@ -1,5 +1,5 @@
 import type { Quote } from './types.js';
-import { isMorningSuitableQuoteText } from './quote-filter.js';
+import { isClassicalQuoteText } from './quote-filter.js';
 
 type WikiquotePage = {
   page: string;
@@ -45,8 +45,13 @@ export async function fetchWikiquoteQuotes(options: {
           fetchImpl
         });
 
-  for (const page of pages) {
+  for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+    const page = pages[pageIndex];
     try {
+      if (pageIndex > 0) {
+        await sleep(WIKIQUOTE_FETCH_DELAY_MS);
+      }
+
       if (options.mode === 'authors' && isDisallowedAuthorPageTitle(page.page)) {
         continue;
       }
@@ -156,13 +161,22 @@ export async function fetchWikiquoteWikitext(options: {
   url.searchParams.set('format', 'json');
   url.searchParams.set('origin', '*');
 
-  const response = await fetchImpl(url);
+  let response: Response | undefined;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await fetchImpl(url);
 
-  if (!response.ok) {
-    throw new Error(`Wikiquote request failed: ${response.status}`);
+    if (response.status !== 429 || attempt === 2) {
+      break;
+    }
+
+    await sleep(1000 * (attempt + 1));
   }
 
-  const data = (await response.json()) as MediaWikiParseResponse;
+  if (!response!.ok) {
+    throw new Error(`Wikiquote request failed: ${response!.status}`);
+  }
+
+  const data = (await response!.json()) as MediaWikiParseResponse;
   const wikitext = data.parse?.wikitext?.['*'];
 
   if (!wikitext) {
@@ -172,6 +186,13 @@ export async function fetchWikiquoteWikitext(options: {
   return wikitext;
 }
 
+const WIKIQUOTE_FETCH_DELAY_MS = 300;
+
+type WikitextSection = {
+  title: string;
+  body: string;
+};
+
 export function extractQuotesFromWikitext(
   wikitext: string,
   author: string,
@@ -179,45 +200,192 @@ export function extractQuotesFromWikitext(
   page: string
 ): Quote[] {
   const quotes: Quote[] = [];
-  const lines = wikitext.split('\n');
-  let current: string[] = [];
-  let inAuthorQuotesSection = false;
+  let extracting = false;
 
-  for (const rawLine of lines) {
+  for (const section of splitWikitextSections(wikitext)) {
+    const sectionKind = classifySection(section.title);
+    if (sectionKind === 'quote') {
+      extracting = true;
+    } else if (sectionKind === 'skip') {
+      extracting = false;
+    }
+
+    if (!extracting) {
+      continue;
+    }
+
+    extractBulletQuotes(section.body, quotes, author, language, page);
+    extractPlainCouplets(section.body, quotes, author, language, page);
+    extractHtmlBoldQuotes(section.body, quotes, author, language, page);
+    extractQuotedStrings(section.body, quotes, author, language, page);
+  }
+
+  return dedupeQuotes(quotes);
+}
+
+function splitWikitextSections(wikitext: string): WikitextSection[] {
+  const sections: WikitextSection[] = [];
+  let current: WikitextSection | null = null;
+
+  for (const rawLine of wikitext.split('\n')) {
     const line = rawLine.trim();
 
-    if (line.startsWith('==')) {
-      if (current.length > 0) {
-        pushQuote(quotes, current, author, language, page);
-        current = [];
+    if (/^=+[^=]+=+$/.test(line)) {
+      if (current) {
+        sections.push(current);
       }
 
-      inAuthorQuotesSection = !/बारे|बाह्य|सन्दर्भ|संदर्भ|External|About/i.test(line);
+      current = { title: line, body: '' };
       continue;
     }
 
-    if (!inAuthorQuotesSection) {
-      continue;
-    }
-
-    if (line.startsWith('*')) {
-      if (current.length > 0) {
-        pushQuote(quotes, current, author, language, page);
-      }
-      current = [line.replace(/^\*\s*/, '')];
-      continue;
-    }
-
-    if (current.length > 0 && line.startsWith(':')) {
-      current.push(line.replace(/^:\s*/, ''));
+    if (current) {
+      current.body += `${rawLine}\n`;
     }
   }
 
-  if (current.length > 0) {
-    pushQuote(quotes, current, author, language, page);
+  if (current) {
+    sections.push(current);
   }
 
-  return quotes;
+  return sections;
+}
+
+function extractBulletQuotes(
+  body: string,
+  quotes: Quote[],
+  author: string,
+  language: 'hi' | 'ur',
+  page: string
+): void {
+  let currentBullet: string[] = [];
+
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+
+    if (/^#{1,6}\s/.test(line)) {
+      continue;
+    }
+
+    if (/^[*#;]+\s/.test(line)) {
+      if (currentBullet.length > 0) {
+        pushQuote(quotes, currentBullet, author, language, page);
+      }
+
+      currentBullet = [line.replace(/^[*#;]+\s*/, '')];
+      continue;
+    }
+
+    if (currentBullet.length > 0 && line.startsWith(':')) {
+      currentBullet.push(line.replace(/^:\s*/, ''));
+      continue;
+    }
+
+    if (currentBullet.length > 0) {
+      pushQuote(quotes, currentBullet, author, language, page);
+      currentBullet = [];
+    }
+  }
+
+  if (currentBullet.length > 0) {
+    pushQuote(quotes, currentBullet, author, language, page);
+  }
+}
+
+function extractPlainCouplets(
+  body: string,
+  quotes: Quote[],
+  author: string,
+  language: 'hi' | 'ur',
+  page: string
+): void {
+  let plainBuffer: string[] = [];
+
+  const flushPlainBuffer = (): void => {
+    if (plainBuffer.length === 0) {
+      return;
+    }
+
+    pushQuote(quotes, [plainBuffer.join(' ')], author, language, page);
+    plainBuffer = [];
+  };
+
+  for (const rawLine of body.split('\n')) {
+    const line = rawLine.trim();
+
+    if (!line || line.startsWith('(') || line.startsWith('[[श्रेणी:') || line.startsWith('{{') || /^[*#;]/.test(line)) {
+      continue;
+    }
+
+    appendPlainLine(plainBuffer, line);
+    if (/[।॥]$/.test(normalizeWikiquoteText(line))) {
+      flushPlainBuffer();
+    }
+  }
+
+  flushPlainBuffer();
+}
+
+function extractHtmlBoldQuotes(
+  body: string,
+  quotes: Quote[],
+  author: string,
+  language: 'hi' | 'ur',
+  page: string
+): void {
+  for (const match of body.matchAll(/<b[^>]*>([\s\S]*?)<\/b>/gi)) {
+    pushQuote(quotes, [match[1]], author, language, page);
+  }
+}
+
+function extractQuotedStrings(
+  body: string,
+  quotes: Quote[],
+  author: string,
+  language: 'hi' | 'ur',
+  page: string
+): void {
+  for (const match of body.matchAll(/[“"]([^"”\n]{10,})["”]/g)) {
+    pushQuote(quotes, [match[1]], author, language, page);
+  }
+}
+
+function classifySection(headerLine: string): 'quote' | 'skip' | 'neutral' {
+  const title = headerLine.replace(/^=+|\s*=+$/g, '').trim();
+
+  if (
+    /बारे में|बाह्य|सन्दर्भ|संदर्भ|बाह्य सूत्र|बाहरी|इन्हें|देखें|देखिए|स्रोत|विशेष|श्रेणियाँ|About|External|पर महापुरुष|के विचार$/i.test(
+      title
+    )
+  ) {
+    return 'skip';
+  }
+
+  const compact = title.replace(/\s+/g, '');
+  if (
+    /(दोहे|उद्धरण|उक्तियाँ|उक्ति|विचार|साखी|कथन|सूक्ति|सूक्तियाँ|चिंतन|उपदेश|श्लोक|पद|गीत|भजन|वचन|वाणी|अनमोल|प्रसिद्ध|कृति)/.test(
+      compact
+    )
+  ) {
+    return 'quote';
+  }
+
+  return 'neutral';
+}
+
+function appendPlainLine(buffer: string[], line: string): void {
+  const parts = line
+    .split(/<br\s*\/?>/gi)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    if (part.startsWith('(')) {
+      continue;
+    }
+
+    buffer.push(part);
+  }
 }
 
 function pushQuote(quotes: Quote[], lines: string[], author: string, language: 'hi' | 'ur', page: string): void {
@@ -250,33 +418,22 @@ function normalizeWikiquoteText(value: string): string {
     .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/g, '$1')
     .replace(/\[\[([^\]]+)\]\]/g, '$1')
     .replace(/\[[^\]\s]+ ([^\]]+)\]/g, '$1')
+    .replace(/^["“]|["”]$/g, '')
     .replace(/--.*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function isCandidateQuote(text: string): boolean {
-  if (text.length < 24 || text.length > 160) {
-    return false;
-  }
-
   if (text.startsWith('*') || text.startsWith(':')) {
     return false;
   }
 
-  if (!/[ऀ-ॿ]/.test(text)) {
-    return false;
-  }
+  return isClassicalQuoteText(text);
+}
 
-  if (/[{}[\]<>]/.test(text)) {
-    return false;
-  }
-
-  if (/ISBN|http|श्रेणी|विकिपीडिया|cite|स्रोत:|यह कथन|बताता है|प्रकाश डालता है/i.test(text)) {
-    return false;
-  }
-
-  return isMorningSuitableQuoteText(text);
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isLikelyAuthorPage(wikitext: string, title: string): boolean {

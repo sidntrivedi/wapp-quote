@@ -11,7 +11,7 @@ export type Quote = {
 export type BotState = {
   rotationIndex: number;
   usedQuoteIds: string[];
-  sentDates: Record<string, { quoteId: string; sentAt: string; messageId?: string }>;
+  sentDates: Record<string, { quoteId: string; author: string; sentAt: string; messageId?: string }>;
 };
 
 export type SendResult = {

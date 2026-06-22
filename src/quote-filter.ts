@@ -80,12 +80,25 @@ const positiveTerms = [
 ];
 
 const unsuitableMorningTerms =
-  /(राजनीति|सरकार|युद्ध|हत्या|अपराध|पाप|शराब|वासना|क्रोध|शत्रु|दंड|सज़ा|सजा|बीमारी|रोग|नफ़रत|नफरत|धन|पैसा|नारी|स्त्री)/;
+  /(राजनीति|सरकार|युद्ध|हत्या|अपराध|पाप|शराब|वासना|क्रोध|शत्रु|दंड|सज़ा|सजा|बीमारी|रोग|नफ़रत|नफरत|आत्महत्या|ख़ुदकुशी|खुदकुशी)/;
+
+const classicalMetaTerms =
+  /ISBN|https?:\/\/|श्रेणी:|विकिपीडिया|cite web|स्रोत:|यह कथन|बताता है|प्रकाश डालता है|कहा जाता है|लेखक ने लिखा|कहते हैं कि/i;
 
 export function isSafeQuoteText(text: string): boolean {
   return !blockedTerms.some((term) => text.includes(term));
 }
 
+/** Hazardous content that should never be posted, even from Wikiquote. */
+export function isHazardousQuoteText(text: string): boolean {
+  if (!isSafeQuoteText(text)) {
+    return true;
+  }
+
+  return unsuitableMorningTerms.test(text.trim());
+}
+
+/** Stricter filter for curated local quotes. */
 export function isMorningSuitableQuoteText(text: string): boolean {
   if (!isSafeQuoteText(text)) {
     return false;
@@ -97,7 +110,7 @@ export function isMorningSuitableQuoteText(text: string): boolean {
     return false;
   }
 
-  if (/['A-Za-zऽॐ॥]/.test(normalized)) {
+  if (/[A-Za-z]/.test(normalized)) {
     return false;
   }
 
@@ -105,11 +118,62 @@ export function isMorningSuitableQuoteText(text: string): boolean {
     return false;
   }
 
-  return positiveTerms.some((term) => hasHindiTerm(normalized, term));
+  return positiveTerms.some((term) => hasPositiveTerm(normalized, term));
+}
+
+/** Permissive filter for sourced Wikiquote text: accept until hazardous. */
+export function isClassicalQuoteText(text: string): boolean {
+  const normalized = text.trim();
+
+  if (normalized.length < 10 || normalized.length > 400) {
+    return false;
+  }
+
+  if (isHazardousQuoteText(normalized)) {
+    return false;
+  }
+
+  if (normalized.includes('?') || normalized.includes('？')) {
+    return false;
+  }
+
+  if (/[A-Za-z]/.test(normalized)) {
+    return false;
+  }
+
+  if (!/[ऀ-ॿ]/.test(normalized)) {
+    return false;
+  }
+
+  if (/[{}[\]<>]/.test(normalized)) {
+    return false;
+  }
+
+  if (classicalMetaTerms.test(normalized)) {
+    return false;
+  }
+
+  if (normalized.startsWith('(') || normalized.startsWith('--')) {
+    return false;
+  }
+
+  if (/^\[\[[^\]]+\]\](\s*\[\[[^\]]+\]\])?$/.test(normalized)) {
+    return false;
+  }
+
+  return true;
 }
 
 export function getBlockedTerms(): string[] {
   return [...blockedTerms];
+}
+
+function hasPositiveTerm(text: string, term: string): boolean {
+  if (term.length <= 2) {
+    return hasHindiTerm(text, term);
+  }
+
+  return text.includes(term);
 }
 
 function hasHindiTerm(text: string, term: string): boolean {

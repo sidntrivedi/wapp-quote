@@ -16,18 +16,21 @@ const baseConfig = {
   aiProvider: 'ollama-cloud',
   ollamaBaseUrl: 'https://ollama.com/api',
   ollamaModel: 'gpt-oss:120b',
+  openaiModel: 'gpt-4o-mini',
   aiTimeoutMs: 1000,
   aiTemperature: 0.7
 } satisfies Pick<
   AppConfig,
-  'aiProvider' | 'ollamaBaseUrl' | 'ollamaModel' | 'aiTimeoutMs' | 'aiTemperature'
+  'aiProvider' | 'ollamaBaseUrl' | 'ollamaModel' | 'openaiModel' | 'aiTimeoutMs' | 'aiTemperature'
 >;
 
 describe('enrichQuoteReflection', () => {
   const originalOllamaApiKey = process.env.OLLAMA_API_KEY;
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
   beforeEach(() => {
-    process.env.OLLAMA_API_KEY = 'test-key';
+    process.env.OLLAMA_API_KEY = 'test-ollama-key';
+    process.env.OPENAI_API_KEY = 'test-openai-key';
   });
 
   afterEach(() => {
@@ -36,6 +39,12 @@ describe('enrichQuoteReflection', () => {
     } else {
       process.env.OLLAMA_API_KEY = originalOllamaApiKey;
     }
+
+    if (originalOpenAiApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
   });
 
   it('validates the Ollama Cloud key from process.env', () => {
@@ -43,8 +52,17 @@ describe('enrichQuoteReflection', () => {
 
     expect(() => validateAiEnvironment(baseConfig)).toThrow(/OLLAMA_API_KEY/);
 
-    process.env.OLLAMA_API_KEY = 'test-key';
+    process.env.OLLAMA_API_KEY = 'test-ollama-key';
     expect(() => validateAiEnvironment(baseConfig)).not.toThrow();
+  });
+
+  it('validates the OpenAI key from process.env', () => {
+    delete process.env.OPENAI_API_KEY;
+
+    expect(() => validateAiEnvironment({ ...baseConfig, aiProvider: 'openai' })).toThrow(/OPENAI_API_KEY/);
+
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    expect(() => validateAiEnvironment({ ...baseConfig, aiProvider: 'openai' })).not.toThrow();
   });
 
   it('keeps the original reflection when AI is disabled', async () => {
@@ -74,11 +92,45 @@ describe('enrichQuoteReflection', () => {
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
-          Authorization: 'Bearer test-key'
+          Authorization: 'Bearer test-ollama-key'
         })
       })
     );
     expect(enriched.reflection).toBe('आज भरोसे के साथ छोटे कदम बढ़ाइए।');
+  });
+
+  it('uses a validated OpenAI reflection', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({ reflection: 'आज मन को शांत और उम्मीद भरा रखिए' })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const enriched = await enrichQuoteReflection({
+      quote,
+      config: { ...baseConfig, aiProvider: 'openai' },
+      fetchImpl
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-openai-key'
+        }),
+        body: expect.stringContaining('"response_format":{"type":"json_object"}')
+      })
+    );
+    expect(enriched.reflection).toBe('आज मन को शांत और उम्मीद भरा रखिए।');
   });
 
   it('falls back to the original reflection when AI output is unsafe', async () => {
