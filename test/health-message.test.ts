@@ -23,11 +23,11 @@ describe('renderHealthMessage', () => {
 
     const message = renderHealthMessage({ entry, insights: baseInsights });
 
-    expect(message).toContain('Health Update');
-    expect(message).toContain('Steps: 9,123 / 8,000 ✅');
-    expect(message).toContain('Sleep: 7.5h / 6h ✅');
-    expect(message).toContain('Active Cal: 520 kcal');
-    expect(message).toContain('Exercise: 35 min');
+    expect(message).toContain('💪 Health Update');
+    expect(message).toContain('👟 Steps: 9,123 / 8,000 ✅');
+    expect(message).toContain('😴 Sleep: 7.5h / 6h ✅');
+    expect(message).toContain('🔥 Active Cal: 520 kcal');
+    expect(message).toContain('🏃 Exercise: 35 min');
   });
 
   it('omits calories and exercise when not in payload', () => {
@@ -40,19 +40,19 @@ describe('renderHealthMessage', () => {
   it('marks steps as failed when goal not met', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 5000, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: { ...baseInsights, metStepGoal: false } });
-    expect(message).toContain('Steps: 5,000 / 8,000 ❌');
+    expect(message).toContain('👟 Steps: 5,000 / 8,000 ❌');
   });
 
   it('marks sleep as failed when goal not met', () => {
     const entry: HealthEntry = { date: '2026-06-21', sleepHours: 5, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: { ...baseInsights, metSleepGoal: false } });
-    expect(message).toContain('Sleep: 5h / 6h ❌');
+    expect(message).toContain('😴 Sleep: 5h / 6h ❌');
   });
 
   it('shows the streak when 2 or more days', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: { ...baseInsights, streakDays: 4 } });
-    expect(message).toContain('Streak: 4 days');
+    expect(message).toContain('⚡ Streak: 4 days');
   });
 
   it('hides the streak when below 2 days', () => {

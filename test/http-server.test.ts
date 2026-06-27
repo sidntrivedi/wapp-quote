@@ -79,7 +79,7 @@ describe('processHealthWebhook', () => {
     expect(result.body).toMatchObject({ status: 'sent', date: '2026-06-21', posted: true, messageId: 'msg-1' });
     expect(sender.sendText).toHaveBeenCalledOnce();
     expect(sender.sendText.mock.calls[0][0]).toBe(groupJid);
-    expect(sender.sendText.mock.calls[0][1]).toContain('Steps: 9,000 / 8,000');
+    expect(sender.sendText.mock.calls[0][1]).toContain('👟 Steps: 9,000 / 8,000');
 
     const state = await healthStore.load();
     expect(state.entries['2026-06-21'].postedAt).toBeDefined();
