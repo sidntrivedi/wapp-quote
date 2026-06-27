@@ -7,6 +7,7 @@ Built with [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web pr
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — system design, module map, runtime flows, and agent onboarding
+- [Health webhook setup](docs/HEALTH-SHORTCUT.md) — Apple Shortcuts → daily health report on WhatsApp
 
 ## Features
 
@@ -15,6 +16,7 @@ Built with [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web pr
 - **Local fallback** — curated `quotes.json` when Wikiquote is unavailable
 - **AI reflections** — optional Ollama Cloud for the daily reflection line (quote text unchanged)
 - **Idempotent sends** — tracks sent dates in `data/state.json`; restarts never duplicate
+- **Health webhook (optional)** — Apple Shortcuts posts daily Health stats (steps, sleep, workouts) to a webhook; the bot stores them and posts a Hindi health report with streaks and a 7-day average. See [docs/HEALTH-SHORTCUT.md](docs/HEALTH-SHORTCUT.md)
 - **Fly.io ready** — always-on machine with persistent volume for auth and state
 
 ## How it works
@@ -95,6 +97,11 @@ See `.env.example` for the full list. Key variables:
 | `OPENAI_API_KEY` | — | Required when `AI_PROVIDER=openai` |
 | `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI chat model |
 | `OLLAMA_API_KEY` | — | Required when `AI_PROVIDER=ollama-cloud` |
+| `HEALTH_WEBHOOK_ENABLED` | `false` | Enable the Apple Shortcuts health webhook |
+| `HEALTH_WEBHOOK_PORT` | `8080` | Port the webhook listens on |
+| `HEALTH_WEBHOOK_TOKEN` | — | Bearer secret; required when the webhook is enabled |
+| `HEALTH_GROUP_JID` | — | Group for health reports (falls back to `WHATSAPP_GROUP_JID`) |
+| `HEALTH_STEP_GOAL` | `8000` | Daily steps goal for the ✅ mark and streaks |
 
 **Wikiquote modes**
 
@@ -109,6 +116,36 @@ Override the author list with `WIKIQUOTE_PAGES=page\|author,page\|author`.
 When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, the bot calls the configured provider to generate the reflection line (`आज की दिशा`). The quote and author are never modified. On failure or validation error, the built-in fallback is used.
 
 Recommended for OpenAI: `AI_PROVIDER=openai` with `OPENAI_MODEL=gpt-4o-mini` (~1 call/day, very low cost).
+
+## Health webhook (optional)
+
+When `HEALTH_WEBHOOK_ENABLED=true`, the `serve` process also runs an HTTP server
+that accepts a daily health payload from an Apple Shortcut and posts a Hindi
+health report to your group. It reuses the same WhatsApp session — no second
+process or login.
+
+```bash
+HEALTH_WEBHOOK_ENABLED=true
+HEALTH_WEBHOOK_TOKEN=$(openssl rand -hex 32)
+HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us   # optional; defaults to WHATSAPP_GROUP_JID
+HEALTH_STEP_GOAL=8000
+```
+
+Endpoints:
+
+- `GET /healthz` — liveness probe
+- `POST /health` — ingest payload; auth via `Authorization: Bearer <token>` or `x-webhook-token`
+
+```bash
+curl -X POST "https://<app>.fly.dev/health" \
+  -H "Authorization: Bearer $HEALTH_WEBHOOK_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"steps":9123,"sleepHours":7.5,"exerciseMinutes":35}'
+```
+
+The report is posted once per day (use `?force=true` to re-post). Full setup,
+payload reference, and the Apple Shortcut walkthrough are in
+[docs/HEALTH-SHORTCUT.md](docs/HEALTH-SHORTCUT.md).
 
 ## Deployment
 
@@ -131,6 +168,15 @@ fly secrets set \
   OPENAI_API_KEY=your_key \
   --app <your-app-name>
 fly deploy --app <your-app-name>
+```
+
+To enable the health webhook in production, also set its secret (the `fly.toml`
+already turns the feature on and exposes HTTPS):
+
+```bash
+fly secrets set HEALTH_WEBHOOK_TOKEN="$(openssl rand -hex 32)" --app <your-app-name>
+# optional, if health reports go to a different group:
+fly secrets set HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us --app <your-app-name>
 ```
 
 On first deploy, watch `fly logs` for the pairing code. Auth is stored on the volume at `/app/data/auth`.
@@ -168,6 +214,7 @@ npm start
 |------|---------|
 | `data/auth/` | WhatsApp session credentials |
 | `data/state.json` | Sent dates and used quote IDs |
+| `data/health.json` | Daily health entries and posted markers (when webhook enabled) |
 
 - Restarts do not resend today's quote.
 - Failed sends retry up to 3 times; state is updated only after WhatsApp accepts the message.

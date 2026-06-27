@@ -2,7 +2,7 @@
 import process from 'node:process';
 import { ZodError } from 'zod';
 import { runCommand, type Command } from './commands.js';
-import { loadConfig } from './config.js';
+import { loadConfig, validateHealthEnvironment } from './config.js';
 import { createLogger } from './logger.js';
 import { StateStore } from './state-store.js';
 import { BaileysWhatsAppSender } from './whatsapp.js';
@@ -15,6 +15,7 @@ async function main(): Promise<Command> {
   const command = parseCommand(process.argv[2]);
   const effectiveConfig = command === 'pair-qr' ? { ...config, authMethod: 'qr' as const } : config;
   validateAiEnvironment(effectiveConfig);
+  validateHealthEnvironment(effectiveConfig);
   const logger = createLogger(effectiveConfig);
   const sender = new BaileysWhatsAppSender(effectiveConfig, logger);
   const stateStore = new StateStore(effectiveConfig.stateFile);

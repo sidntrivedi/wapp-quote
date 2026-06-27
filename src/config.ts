@@ -34,7 +34,12 @@ const envSchema = z.object({
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
-  QUOTE_CATCH_UP: booleanEnv.default('true')
+  QUOTE_CATCH_UP: booleanEnv.default('true'),
+  HEALTH_WEBHOOK_ENABLED: booleanEnv.default('false'),
+  HEALTH_WEBHOOK_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+  HEALTH_WEBHOOK_TOKEN: z.string().trim().optional(),
+  HEALTH_GROUP_JID: z.string().trim().optional(),
+  HEALTH_STEP_GOAL: z.coerce.number().int().min(0).max(1000000).default(8000)
 });
 
 export type AppConfig = {
@@ -62,6 +67,12 @@ export type AppConfig = {
   aiTemperature: number;
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
   quoteCatchUp: boolean;
+  healthWebhookEnabled: boolean;
+  healthWebhookPort: number;
+  healthWebhookToken?: string;
+  healthGroupJid?: string;
+  healthStepGoal: number;
+  healthStateFile: string;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -92,7 +103,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     aiTimeoutMs: parsed.AI_TIMEOUT_MS,
     aiTemperature: parsed.AI_TEMPERATURE,
     logLevel: parsed.LOG_LEVEL,
-    quoteCatchUp: parsed.QUOTE_CATCH_UP
+    quoteCatchUp: parsed.QUOTE_CATCH_UP,
+    healthWebhookEnabled: parsed.HEALTH_WEBHOOK_ENABLED,
+    healthWebhookPort: parsed.HEALTH_WEBHOOK_PORT,
+    healthWebhookToken: parsed.HEALTH_WEBHOOK_TOKEN,
+    healthGroupJid: parsed.HEALTH_GROUP_JID,
+    healthStepGoal: parsed.HEALTH_STEP_GOAL,
+    healthStateFile: path.resolve(parsed.STATE_FILE ? path.join(path.dirname(parsed.STATE_FILE), 'health.json') : path.join(dataDir, 'health.json'))
   };
 }
 
@@ -135,6 +152,38 @@ export function requireGroupJid(config: AppConfig): string {
   }
 
   return config.groupJid;
+}
+
+export function validateHealthEnvironment(config: AppConfig): void {
+  if (!config.healthWebhookEnabled) {
+    return;
+  }
+
+  if (!config.healthWebhookToken) {
+    throw new Error('HEALTH_WEBHOOK_TOKEN is required when HEALTH_WEBHOOK_ENABLED=true. Set a long random secret.');
+  }
+
+  const groupJid = config.healthGroupJid ?? config.groupJid;
+  if (!groupJid) {
+    throw new Error('HEALTH_GROUP_JID (or WHATSAPP_GROUP_JID) is required when HEALTH_WEBHOOK_ENABLED=true.');
+  }
+
+  if (!groupJid.endsWith('@g.us')) {
+    throw new Error(`Health target must be a group JID ending with @g.us. Got: ${groupJid}`);
+  }
+}
+
+export function requireHealthGroupJid(config: AppConfig): string {
+  const groupJid = config.healthGroupJid ?? config.groupJid;
+  if (!groupJid) {
+    throw new Error('HEALTH_GROUP_JID (or WHATSAPP_GROUP_JID) is required to post health reports.');
+  }
+
+  if (!groupJid.endsWith('@g.us')) {
+    throw new Error(`Health target must be a group JID ending with @g.us. Got: ${groupJid}`);
+  }
+
+  return groupJid;
 }
 
 export function requirePairingPhoneNumber(config: AppConfig): string {

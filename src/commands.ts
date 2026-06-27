@@ -2,7 +2,9 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
-import { requireGroupJid } from './config.js';
+import { requireGroupJid, requireHealthGroupJid } from './config.js';
+import { HealthStore } from './health-store.js';
+import { startHealthServer, type HealthServerHandle } from './http-server.js';
 import { getQuoteForPreview } from './quotes.js';
 import { ScheduledAuthorUnavailableError, selectQuote } from './quote-source.js';
 import { runDailyQuote } from './quote-runner.js';
@@ -63,6 +65,18 @@ async function serve(options: {
   const groupJid = requireGroupJid(options.config);
   await options.sender.connect();
 
+  let healthServer: HealthServerHandle | undefined;
+  if (options.config.healthWebhookEnabled) {
+    healthServer = await startHealthServer({
+      port: options.config.healthWebhookPort,
+      config: options.config,
+      logger: options.logger,
+      sender: options.sender,
+      healthStore: new HealthStore(options.config.healthStateFile),
+      groupJid: requireHealthGroupJid(options.config)
+    });
+  }
+
   startDailySchedule({
     quoteTime: options.config.quoteTime,
     timeZone: options.config.timeZone,
@@ -86,6 +100,12 @@ async function serve(options: {
 
   options.logger.info('bot is running');
   await waitForShutdown(options.config.dataDir);
+
+  if (healthServer) {
+    await healthServer.close().catch((error: unknown) => {
+      options.logger.warn({ err: error }, 'failed to close health webhook server');
+    });
+  }
 }
 
 async function runScheduledDailyQuote(options: {

@@ -24,6 +24,20 @@ swap_size_mb = 256
   AI_TEMPERATURE = "0.7"
   LOG_LEVEL = "info"
   QUOTE_CATCH_UP = "true"
+  HEALTH_WEBHOOK_ENABLED = "true"
+  HEALTH_WEBHOOK_PORT = "8080"
+  HEALTH_STEP_GOAL = "8000"
+
+# HTTP service for the Apple Shortcuts health webhook. auto_stop is disabled so
+# the single long-lived WhatsApp (Baileys) session in the serve process is never
+# killed between requests.
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ["app"]
 
 [mounts]
   source = "wapp_quote_data"
