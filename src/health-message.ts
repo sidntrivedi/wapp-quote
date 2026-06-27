@@ -10,13 +10,11 @@ export type HealthInsights = {
 };
 
 /**
- * Render the daily health report in English. `summary`, when provided, is an
- * AI-generated closing line that replaces the built-in default.
+ * Render the daily health report in English.
  */
 export function renderHealthMessage(options: {
   entry: HealthEntry;
   insights: HealthInsights;
-  summary?: string;
 }): string {
   const { entry, insights } = options;
   const lines: string[] = ['💪 Health Update', ''];
@@ -48,30 +46,7 @@ export function renderHealthMessage(options: {
     lines.push(`⚡ Streak: ${insights.streakDays} days`);
   }
 
-  // Closing line
-  const closing = options.summary?.trim() || defaultEncouragement(entry, insights);
-  lines.push('', closing);
-
   return lines.join('\n');
-}
-
-function defaultEncouragement(entry: HealthEntry, insights: HealthInsights): string {
-  const bothMet = insights.metStepGoal && (entry.sleepHours === undefined || insights.metSleepGoal);
-  const neitherMet = !insights.metStepGoal && entry.sleepHours !== undefined && !insights.metSleepGoal;
-
-  if (bothMet) {
-    return "Crushed it! Both goals done. Keep the momentum going.";
-  }
-  if (neitherMet) {
-    return `Come on — ${formatNumber(insights.stepGoal)} steps and ${insights.sleepGoalHours}h sleep aren't optional. Do better tomorrow.`;
-  }
-  if (!insights.metStepGoal && entry.steps !== undefined) {
-    return `Only ${formatNumber(entry.steps)} steps? Move more. ${formatNumber(insights.stepGoal)} is the target.`;
-  }
-  if (entry.sleepHours !== undefined && !insights.metSleepGoal) {
-    return `Only ${entry.sleepHours}h of sleep? Rest up — aim for ${insights.sleepGoalHours}h.`;
-  }
-  return 'Goals met. Stay consistent.';
 }
 
 function formatNumber(value: number): string {

@@ -16,13 +16,7 @@ const config: HealthWebhookConfig = {
   healthWebhookToken: 'secret-token',
   healthStepGoal: 8000,
   healthSleepGoalHours: 6,
-  timeZone: 'Asia/Kolkata',
-  aiProvider: 'none',
-  ollamaBaseUrl: 'https://ollama.com/api',
-  ollamaModel: 'gpt-oss:120b',
-  openaiModel: 'gpt-4o-mini',
-  aiTimeoutMs: 10000,
-  aiTemperature: 0.7
+  timeZone: 'Asia/Kolkata'
 };
 
 function createSender() {

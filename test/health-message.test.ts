@@ -61,44 +61,15 @@ describe('renderHealthMessage', () => {
     expect(message).not.toContain('Streak');
   });
 
-  it('uses the AI summary line when provided', () => {
-    const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
-    const message = renderHealthMessage({ entry, insights: baseInsights, summary: 'Great work today!' });
-    expect(message).toContain('Great work today!');
-  });
-
-  it('falls back to default encouragement when both goals met', () => {
+  it('does not include a closing line', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 9000, sleepHours: 7, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: baseInsights });
-    expect(message).toContain('Crushed it!');
-  });
-
-  it('falls back to a bash message when both goals missed', () => {
-    const entry: HealthEntry = { date: '2026-06-21', steps: 5000, sleepHours: 4, receivedAt: 'x' };
-    const message = renderHealthMessage({
-      entry,
-      insights: { ...baseInsights, metStepGoal: false, metSleepGoal: false }
-    });
-    expect(message).toContain('Do better tomorrow');
-  });
-
-  it('bashes only steps when steps missed but sleep met', () => {
-    const entry: HealthEntry = { date: '2026-06-21', steps: 4000, sleepHours: 7, receivedAt: 'x' };
-    const message = renderHealthMessage({
-      entry,
-      insights: { ...baseInsights, metStepGoal: false }
-    });
-    expect(message).toContain('steps?');
-    expect(message).toContain('8,000 is the target');
-  });
-
-  it('bashes only sleep when sleep missed but steps met', () => {
-    const entry: HealthEntry = { date: '2026-06-21', steps: 9000, sleepHours: 4.5, receivedAt: 'x' };
-    const message = renderHealthMessage({
-      entry,
-      insights: { ...baseInsights, metSleepGoal: false }
-    });
-    expect(message).toContain('sleep?');
-    expect(message).toContain('aim for 6h');
+    const lines = message.split('\n').filter(Boolean);
+    // Only header + data lines, nothing else
+    expect(lines).toEqual([
+      '💪 Health Update',
+      '👟 Steps: 9,000 / 8,000 ✅',
+      '😴 Sleep: 7h / 6h ✅',
+    ]);
   });
 });

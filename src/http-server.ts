@@ -5,7 +5,6 @@ import type { AppConfig } from './config.js';
 import { parseHealthPayload } from './health-schema.js';
 import { renderHealthMessage, type HealthInsights } from './health-message.js';
 import { HealthStore, markPosted, stepGoalStreak, trailingStepsAverage, upsertEntry } from './health-store.js';
-import { generateHealthSummary } from './health-summary.js';
 import type { HealthState } from './health-types.js';
 import type { WhatsAppSender } from './types.js';
 
@@ -15,12 +14,6 @@ export type HealthWebhookConfig = Pick<
   | 'healthStepGoal'
   | 'healthSleepGoalHours'
   | 'timeZone'
-  | 'aiProvider'
-  | 'ollamaBaseUrl'
-  | 'ollamaModel'
-  | 'openaiModel'
-  | 'aiTimeoutMs'
-  | 'aiTemperature'
 >;
 
 export type HealthWebhookResult = {
@@ -79,14 +72,7 @@ export async function processHealthWebhook(options: {
 
   const insights: HealthInsights = buildInsights(stateWithEntry, mergedEntry.date, options.config.healthStepGoal, options.config.healthSleepGoalHours);
 
-  const summary = await generateHealthSummary({
-    entry: mergedEntry,
-    insights,
-    config: options.config,
-    logger: options.logger
-  });
-
-  const message = renderHealthMessage({ entry: mergedEntry, insights, summary });
+  const message = renderHealthMessage({ entry: mergedEntry, insights });
 
   await options.sender.ensureConnected();
   const sendResult = await sendWithRetry(() => options.sender.sendText(options.groupJid, message), 3);
