@@ -13,6 +13,7 @@ export type HealthWebhookConfig = Pick<
   AppConfig,
   | 'healthWebhookToken'
   | 'healthStepGoal'
+  | 'healthSleepGoalHours'
   | 'timeZone'
   | 'aiProvider'
   | 'ollamaBaseUrl'
@@ -76,7 +77,7 @@ export async function processHealthWebhook(options: {
     };
   }
 
-  const insights: HealthInsights = buildInsights(stateWithEntry, mergedEntry.date, options.config.healthStepGoal);
+  const insights: HealthInsights = buildInsights(stateWithEntry, mergedEntry.date, options.config.healthStepGoal, options.config.healthSleepGoalHours);
 
   const summary = await generateHealthSummary({
     entry: mergedEntry,
@@ -104,12 +105,15 @@ export async function processHealthWebhook(options: {
   };
 }
 
-function buildInsights(state: HealthState, date: string, stepGoal: number): HealthInsights {
+function buildInsights(state: HealthState, date: string, stepGoal: number, sleepGoalHours: number): HealthInsights {
   const entry = state.entries[date];
   const metStepGoal = stepGoal > 0 && entry?.steps !== undefined && entry.steps >= stepGoal;
+  const metSleepGoal = sleepGoalHours > 0 && entry?.sleepHours !== undefined && entry.sleepHours >= sleepGoalHours;
   return {
     stepGoal,
+    sleepGoalHours,
     metStepGoal,
+    metSleepGoal,
     streakDays: stepGoalStreak(state, date, stepGoal),
     trailingAverageSteps: trailingStepsAverage(state, date, TRAILING_AVERAGE_DAYS)
   };

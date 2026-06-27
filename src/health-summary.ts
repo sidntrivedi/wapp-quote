@@ -140,10 +140,12 @@ function summaryMessages(entry: HealthEntry, insights: HealthInsights): ChatMess
       role: 'system',
       content: [
         'Return only valid JSON.',
-        'Write one warm, simple, positive Hindi line encouraging healthy habits, based on the stats.',
-        'Be specific and friendly, like a caring family member. Mention a concrete number if helpful.',
-        'Do not include medical advice, diagnosis, criticism, guilt, or fear.',
-        'Keep it under 22 words. JSON shape: {"summary":"..."}'
+        "Write one short English sentence (under 20 words) reacting to the day's health stats.",
+        'Goals are: steps >= stepGoal, sleep >= sleepGoalHours.',
+        'If both goals are met: be genuinely encouraging.',
+        'If goals are missed: be blunt and push them to do better tomorrow — no sugarcoating.',
+        'No emojis, no fluff, no medical advice.',
+        '{"summary":"..."}'
       ].join(' ')
     },
     {
@@ -152,12 +154,10 @@ function summaryMessages(entry: HealthEntry, insights: HealthInsights): ChatMess
         steps: entry.steps,
         stepGoal: insights.stepGoal,
         metStepGoal: insights.metStepGoal,
-        streakDays: insights.streakDays,
-        exerciseMinutes: entry.exerciseMinutes,
         sleepHours: entry.sleepHours,
-        sleepQuality: entry.sleepQuality,
-        workouts: entry.workouts?.map((workout) => workout.type),
-        target: 'Hindi family WhatsApp health summary'
+        sleepGoalHours: insights.sleepGoalHours,
+        metSleepGoal: insights.metSleepGoal,
+        streakDays: insights.streakDays
       })
     }
   ];
@@ -195,8 +195,8 @@ function validateSummary(summary: string): string {
     throw new Error('AI health summary must be one line');
   }
 
-  if (!/[ऀ-ॿ]/.test(normalized)) {
-    throw new Error('AI health summary must contain Hindi text');
+  if (!/[a-zA-Z]/.test(normalized)) {
+    throw new Error('AI health summary must contain English text');
   }
 
   return normalized;

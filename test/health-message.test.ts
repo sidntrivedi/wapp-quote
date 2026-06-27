@@ -4,74 +4,101 @@ import type { HealthEntry } from '../src/health-types.js';
 
 const baseInsights: HealthInsights = {
   stepGoal: 8000,
+  sleepGoalHours: 6,
   metStepGoal: true,
+  metSleepGoal: true,
   streakDays: 1
 };
 
 describe('renderHealthMessage', () => {
-  it('renders core stats with a goal check mark when met', () => {
+  it('renders steps, sleep, calories and exercise with goal markers', () => {
     const entry: HealthEntry = {
       date: '2026-06-21',
       steps: 9123,
-      distanceKm: 6.4,
-      exerciseMinutes: 35,
       sleepHours: 7.5,
-      sleepQuality: 'अच्छी',
-      restingHeartRate: 58,
+      activeEnergyKcal: 520,
+      exerciseMinutes: 35,
       receivedAt: '2026-06-21T16:00:00.000Z'
     };
 
     const message = renderHealthMessage({ entry, insights: baseInsights });
 
-    expect(message).toContain('🩺 आज की सेहत रिपोर्ट');
-    expect(message).toContain('👟 कदम: 9,123 ✅');
-    expect(message).toContain('📏 दूरी: 6.4 किमी');
-    expect(message).toContain('🏃 व्यायाम: 35 मिनट');
-    expect(message).toContain('😴 नींद: 7.5 घंटे (अच्छी)');
-    expect(message).toContain('❤️ विश्राम हृदय गति: 58 बीपीएम');
+    expect(message).toContain('Health Update');
+    expect(message).toContain('Steps: 9,123 / 8,000 ✅');
+    expect(message).toContain('Sleep: 7.5h / 6h ✅');
+    expect(message).toContain('Active Cal: 520 kcal');
+    expect(message).toContain('Exercise: 35 min');
   });
 
-  it('shows the streak insight when 2 or more days', () => {
+  it('omits calories and exercise when not in payload', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
-    const message = renderHealthMessage({
-      entry,
-      insights: { ...baseInsights, streakDays: 4 }
-    });
-    expect(message).toContain('🔥 4 दिन से कदमों का लक्ष्य पूरा');
+    const message = renderHealthMessage({ entry, insights: baseInsights });
+    expect(message).not.toContain('Active Cal');
+    expect(message).not.toContain('Exercise');
   });
 
-  it('includes the 7-day average when available', () => {
+  it('marks steps as failed when goal not met', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 5000, receivedAt: 'x' };
+    const message = renderHealthMessage({ entry, insights: { ...baseInsights, metStepGoal: false } });
+    expect(message).toContain('Steps: 5,000 / 8,000 ❌');
+  });
+
+  it('marks sleep as failed when goal not met', () => {
+    const entry: HealthEntry = { date: '2026-06-21', sleepHours: 5, receivedAt: 'x' };
+    const message = renderHealthMessage({ entry, insights: { ...baseInsights, metSleepGoal: false } });
+    expect(message).toContain('Sleep: 5h / 6h ❌');
+  });
+
+  it('shows the streak when 2 or more days', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
-    const message = renderHealthMessage({
-      entry,
-      insights: { ...baseInsights, trailingAverageSteps: 7500 }
-    });
-    expect(message).toContain('📊 7-दिन औसत कदम: 7,500');
+    const message = renderHealthMessage({ entry, insights: { ...baseInsights, streakDays: 4 } });
+    expect(message).toContain('Streak: 4 days');
+  });
+
+  it('hides the streak when below 2 days', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
+    const message = renderHealthMessage({ entry, insights: { ...baseInsights, streakDays: 1 } });
+    expect(message).not.toContain('Streak');
   });
 
   it('uses the AI summary line when provided', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 9000, receivedAt: 'x' };
-    const message = renderHealthMessage({ entry, insights: baseInsights, summary: 'शानदार दिन रहा!' });
-    expect(message).toContain('🌱 शानदार दिन रहा!');
+    const message = renderHealthMessage({ entry, insights: baseInsights, summary: 'Great work today!' });
+    expect(message).toContain('Great work today!');
   });
 
-  it('falls back to default encouragement without a summary', () => {
-    const entry: HealthEntry = { date: '2026-06-21', steps: 5000, receivedAt: 'x' };
+  it('falls back to default encouragement when both goals met', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 9000, sleepHours: 7, receivedAt: 'x' };
+    const message = renderHealthMessage({ entry, insights: baseInsights });
+    expect(message).toContain('Crushed it!');
+  });
+
+  it('falls back to a bash message when both goals missed', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 5000, sleepHours: 4, receivedAt: 'x' };
+    const message = renderHealthMessage({
+      entry,
+      insights: { ...baseInsights, metStepGoal: false, metSleepGoal: false }
+    });
+    expect(message).toContain('Do better tomorrow');
+  });
+
+  it('bashes only steps when steps missed but sleep met', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 4000, sleepHours: 7, receivedAt: 'x' };
     const message = renderHealthMessage({
       entry,
       insights: { ...baseInsights, metStepGoal: false }
     });
-    expect(message).toContain('🌱');
-    expect(message).not.toContain('✅');
+    expect(message).toContain('steps?');
+    expect(message).toContain('8,000 is the target');
   });
 
-  it('renders workout details', () => {
-    const entry: HealthEntry = {
-      date: '2026-06-21',
-      workouts: [{ type: 'Running', minutes: 30 }],
-      receivedAt: 'x'
-    };
-    const message = renderHealthMessage({ entry, insights: { ...baseInsights, metStepGoal: false, streakDays: 0 } });
-    expect(message).toContain('💪 वर्कआउट: Running · 30 मिनट');
+  it('bashes only sleep when sleep missed but steps met', () => {
+    const entry: HealthEntry = { date: '2026-06-21', steps: 9000, sleepHours: 4.5, receivedAt: 'x' };
+    const message = renderHealthMessage({
+      entry,
+      insights: { ...baseInsights, metSleepGoal: false }
+    });
+    expect(message).toContain('sleep?');
+    expect(message).toContain('aim for 6h');
   });
 });

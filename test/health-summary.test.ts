@@ -4,7 +4,7 @@ import type { HealthInsights } from '../src/health-message.js';
 import type { HealthEntry } from '../src/health-types.js';
 
 const entry: HealthEntry = { date: '2026-06-21', steps: 9000, sleepHours: 7.5, receivedAt: 'x' };
-const insights: HealthInsights = { stepGoal: 8000, metStepGoal: true, streakDays: 3 };
+const insights: HealthInsights = { stepGoal: 8000, sleepGoalHours: 6, metStepGoal: true, metSleepGoal: true, streakDays: 3 };
 
 const baseConfig = {
   ollamaBaseUrl: 'https://ollama.com/api',
@@ -24,11 +24,11 @@ describe('generateHealthSummary', () => {
     expect(result).toBeUndefined();
   });
 
-  it('returns a validated Hindi summary from openai', async () => {
+  it('returns a validated English summary from openai', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"summary":"बढ़िया! आज लक्ष्य पूरा हुआ।"}' } }] })
+      json: async () => ({ choices: [{ message: { content: '{"summary":"Solid effort, both goals nailed today."}' } }] })
     });
 
     const result = await generateHealthSummary({
@@ -38,15 +38,15 @@ describe('generateHealthSummary', () => {
       fetchImpl: fetchImpl as never
     });
 
-    expect(result).toBe('बढ़िया! आज लक्ष्य पूरा हुआ।');
+    expect(result).toBe('Solid effort, both goals nailed today.');
     delete process.env.OPENAI_API_KEY;
   });
 
-  it('falls back to undefined on a non-Hindi summary', async () => {
+  it('falls back to undefined on a non-English summary', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"summary":"Great job today!"}' } }] })
+      json: async () => ({ choices: [{ message: { content: '{"summary":"शानदार दिन रहा!"}' } }] })
     });
 
     const result = await generateHealthSummary({

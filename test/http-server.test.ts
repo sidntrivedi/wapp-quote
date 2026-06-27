@@ -15,6 +15,7 @@ const logger = {
 const config: HealthWebhookConfig = {
   healthWebhookToken: 'secret-token',
   healthStepGoal: 8000,
+  healthSleepGoalHours: 6,
   timeZone: 'Asia/Kolkata',
   aiProvider: 'none',
   ollamaBaseUrl: 'https://ollama.com/api',
@@ -78,7 +79,7 @@ describe('processHealthWebhook', () => {
     expect(result.body).toMatchObject({ status: 'sent', date: '2026-06-21', posted: true, messageId: 'msg-1' });
     expect(sender.sendText).toHaveBeenCalledOnce();
     expect(sender.sendText.mock.calls[0][0]).toBe(groupJid);
-    expect(sender.sendText.mock.calls[0][1]).toContain('👟 कदम: 9,000');
+    expect(sender.sendText.mock.calls[0][1]).toContain('Steps: 9,000 / 8,000');
 
     const state = await healthStore.load();
     expect(state.entries['2026-06-21'].postedAt).toBeDefined();
@@ -150,6 +151,6 @@ describe('processHealthWebhook', () => {
     await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJid, now: new Date('2026-06-21T16:00:00Z') });
 
     const lastMessage = sender.sendText.mock.calls[1][1] as string;
-    expect(lastMessage).toContain('🔥 2 दिन से कदमों का लक्ष्य पूरा');
+    expect(lastMessage).toContain('Streak: 2 days');
   });
 });

@@ -95,6 +95,7 @@ describe('config', () => {
     expect(config.healthWebhookEnabled).toBe(false);
     expect(config.healthWebhookPort).toBe(8080);
     expect(config.healthStepGoal).toBe(8000);
+    expect(config.healthSleepGoalHours).toBe(6);
     expect(config.healthStateFile).toMatch(/health\.json$/);
   });
 
@@ -104,13 +105,15 @@ describe('config', () => {
       HEALTH_WEBHOOK_PORT: '9090',
       HEALTH_WEBHOOK_TOKEN: 'secret',
       HEALTH_GROUP_JID: '120363361658284910@g.us',
-      HEALTH_STEP_GOAL: '10000'
+      HEALTH_STEP_GOAL: '10000',
+      HEALTH_SLEEP_GOAL_HOURS: '7'
     });
 
     expect(config.healthWebhookEnabled).toBe(true);
     expect(config.healthWebhookPort).toBe(9090);
     expect(config.healthWebhookToken).toBe('secret');
     expect(config.healthStepGoal).toBe(10000);
+    expect(config.healthSleepGoalHours).toBe(7);
   });
 
   it('validateHealthEnvironment is a no-op when disabled', () => {

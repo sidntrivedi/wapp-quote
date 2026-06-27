@@ -39,7 +39,8 @@ const envSchema = z.object({
   HEALTH_WEBHOOK_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   HEALTH_WEBHOOK_TOKEN: z.string().trim().optional(),
   HEALTH_GROUP_JID: z.string().trim().optional(),
-  HEALTH_STEP_GOAL: z.coerce.number().int().min(0).max(1000000).default(8000)
+  HEALTH_STEP_GOAL: z.coerce.number().int().min(0).max(1000000).default(8000),
+  HEALTH_SLEEP_GOAL_HOURS: z.coerce.number().min(0).max(24).default(6)
 });
 
 export type AppConfig = {
@@ -72,6 +73,7 @@ export type AppConfig = {
   healthWebhookToken?: string;
   healthGroupJid?: string;
   healthStepGoal: number;
+  healthSleepGoalHours: number;
   healthStateFile: string;
 };
 
@@ -109,6 +111,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     healthWebhookToken: parsed.HEALTH_WEBHOOK_TOKEN,
     healthGroupJid: parsed.HEALTH_GROUP_JID,
     healthStepGoal: parsed.HEALTH_STEP_GOAL,
+    healthSleepGoalHours: parsed.HEALTH_SLEEP_GOAL_HOURS,
     healthStateFile: path.resolve(parsed.STATE_FILE ? path.join(path.dirname(parsed.STATE_FILE), 'health.json') : path.join(dataDir, 'health.json'))
   };
 }
