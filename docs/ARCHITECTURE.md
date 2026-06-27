@@ -6,16 +6,20 @@ This document describes how the wapp-quote bot is structured. It is written for 
 
 wapp-quote is a **daily Hindi uplifting quote bot** for WhatsApp groups. It posts **one message per day** at a configured local time (default 06:00 IST), sourced from Hindi Wikiquote with a local fallback bank. It uses [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web protocol) and runs as a single Node.js process.
 
+It also has an optional **health webhook** ([health feature](#health-webhook)): when enabled, the same `serve` process runs an HTTP server that accepts daily Apple Shortcuts Health payloads, stores them, and posts a Hindi health report to a WhatsApp group. See [HEALTH-SHORTCUT.md](./HEALTH-SHORTCUT.md) for the user-facing setup.
+
 ### Design constraints
 
 These invariants are intentional. Do not break them without explicit product approval:
 
 | Constraint | Where enforced | Why |
 |------------|----------------|-----|
-| Send-only — no inbound message handling | [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Bot is a one-way broadcaster; Baileys skips decrypt for all JIDs |
+| Send-only — no inbound WhatsApp handling | [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Bot is a one-way broadcaster; Baileys skips decrypt for all JIDs. (The health webhook is inbound **HTTP**, not inbound WhatsApp — this invariant is preserved.) |
 | One message per calendar day | [`src/quote-runner.ts`](../src/quote-runner.ts) | `sentDates` keyed by `YYYY-MM-DD` in configured TZ |
 | State saved only after WhatsApp accepts send | [`src/commands.ts`](../src/commands.ts) `runScheduledDailyQuote` | Prevents duplicate sends on restart after partial failure |
 | Only one `serve` process at a time | [`src/serve-lock.ts`](../src/serve-lock.ts) | PID file at `data/serve.lock` |
+| Health webhook posts share the single live WhatsApp session | [`src/http-server.ts`](../src/http-server.ts) started inside `serve` | Baileys allows only one session; a separate process would conflict |
+| One health report per calendar day | [`src/http-server.ts`](../src/http-server.ts) `processHealthWebhook` | `postedAt` keyed by date in `data/health.json`; `?force=true` overrides |
 | `send-now` / `list-groups` blocked while `serve` runs | [`src/serve-lock.ts`](../src/serve-lock.ts) `assertServeNotRunning` | Prevents one-shot commands from stealing the live WhatsApp session |
 
 ---
@@ -30,12 +34,14 @@ graph TB
         SCH[scheduler.ts]
         RUN[quote-runner.ts]
         WA[whatsapp.ts]
+        HTTP[http-server.ts optional]
     end
 
     subgraph storage [Local Filesystem data/]
         AUTH[auth/]
         STATE[state.json]
         LOCK[serve.lock]
+        HEALTH[health.json optional]
     end
 
     subgraph external [External Services]
@@ -43,6 +49,7 @@ graph TB
         OAI[OpenAI API optional]
         OLL[Ollama Cloud API optional]
         WANET[WhatsApp Servers]
+        SHORT[Apple Shortcuts optional]
     end
 
     CLI --> CMD
@@ -56,9 +63,13 @@ graph TB
     RUN --> OLL
     RUN --> STATE
     CMD --> LOCK
+    CMD --> HTTP
+    SHORT --> HTTP
+    HTTP --> HEALTH
+    HTTP --> WA
 ```
 
-There is **no database**, message queue, or external cron. All persistence is JSON and Baileys multi-file auth on disk.
+There is **no database**, message queue, or external cron. All persistence is JSON and Baileys multi-file auth on disk. The optional health webhook ([`http-server.ts`](../src/http-server.ts)) runs inside the same `serve` process and reuses its WhatsApp session.
 
 ---
 
@@ -141,6 +152,17 @@ Dependency direction: **`commands` orchestrates** → **`quote-runner`** (idempo
 | [`src/whatsapp.ts`](../src/whatsapp.ts) | Baileys connect, send, reconnect, list groups | Changing WhatsApp behavior |
 | [`src/message.ts`](../src/message.ts) | Hindi message template rendering | Changing output format |
 | [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Tell Baileys to ignore inbound decrypt | Rarely — send-only design |
+
+### Health webhook
+
+| File | Responsibility | Edit when |
+|------|----------------|-----------|
+| [`src/http-server.ts`](../src/http-server.ts) | Node `http` server; routing, bearer auth, `processHealthWebhook` core | Changing endpoints, auth, or ingest flow |
+| [`src/health-schema.ts`](../src/health-schema.ts) | Zod payload validation + unit-stripping coercion → `HealthEntry` | Changing accepted fields or parsing |
+| [`src/health-store.ts`](../src/health-store.ts) | Atomic JSON store for `health.json`; upsert, mark-posted, streak/average | Changing persistence or insights math |
+| [`src/health-message.ts`](../src/health-message.ts) | Hindi health report renderer + default encouragement | Changing report layout |
+| [`src/health-summary.ts`](../src/health-summary.ts) | Optional AI one-line Hindi encouragement (reuses AI provider config) | Changing AI summary behavior |
+| [`src/health-types.ts`](../src/health-types.ts) | `HealthEntry`, `HealthState`, `HealthWorkout` | Changing health data shapes |
 
 ### State / idempotency
 
@@ -237,6 +259,41 @@ flowchart TD
 
 QR mode also writes `data/pairing-qr.svg`. After re-pairing on Fly.io, restart the machine so `serve` loads the new session.
 
+### Flow D: health webhook
+
+Only active when `HEALTH_WEBHOOK_ENABLED=true`. The server is started by `serve()` ([`commands.ts`](../src/commands.ts)) and closed on shutdown.
+
+```mermaid
+sequenceDiagram
+    participant SC as Apple Shortcut
+    participant HS as http-server.ts
+    participant Schema as health-schema
+    participant Store as health-store
+    participant AI as health-summary
+    participant Msg as health-message
+    participant WA as whatsapp.ts
+
+    SC->>HS: POST /health (Bearer token)
+    HS->>HS: isAuthorized
+    HS->>Schema: parseHealthPayload
+    HS->>Store: load + upsertEntry + save
+    alt already posted today and not force
+        HS-->>SC: 200 {status: stored, posted: false}
+    else post report
+        HS->>Store: stepGoalStreak + trailingStepsAverage
+        HS->>AI: generateHealthSummary (optional)
+        HS->>Msg: renderHealthMessage
+        HS->>WA: ensureConnected + sendText (3 retries)
+        HS->>Store: markPosted + save
+        HS-->>SC: 200 {status: sent, messageId}
+    end
+```
+
+- Auth: `Authorization: Bearer <token>` or `x-webhook-token` header, compared with a constant-time check.
+- Idempotency: `postedAt` per date in `health.json`; same-day reposts require `?force=true`.
+- The payload is stored before sending, so partial payloads accumulate; a later payload for the same date refines the entry.
+- Send shares the single live Baileys session via the same `sender` injected into `serve`.
+
 ---
 
 ## Data model
@@ -273,6 +330,31 @@ interface WhatsAppSender {
 
 `dateKey` in `sentDates` is `YYYY-MM-DD` in the configured `TZ` ([`date.ts`](../src/date.ts) `localDateKey`).
 
+### Health types ([`src/health-types.ts`](../src/health-types.ts))
+
+```typescript
+type HealthEntry = {
+  date: string;              // YYYY-MM-DD
+  steps?: number;
+  distanceKm?: number;
+  activeEnergyKcal?: number;
+  exerciseMinutes?: number;
+  standHours?: number;
+  sleepHours?: number;
+  sleepQuality?: string;
+  restingHeartRate?: number;
+  workouts?: Array<{ type: string; minutes?: number; energyKcal?: number }>;
+  notes?: string;
+  receivedAt: string;        // ISO timestamp of ingest
+  postedAt?: string;         // ISO timestamp when posted to WhatsApp
+  messageId?: string;
+};
+
+type HealthState = { entries: Record<string, HealthEntry> };  // keyed by date
+```
+
+`health.json` keeps the most recent ~400 dated entries ([`health-store.ts`](../src/health-store.ts)).
+
 ### Filesystem layout
 
 All paths relative to `DATA_DIR` (default `./data`):
@@ -283,6 +365,7 @@ All paths relative to `DATA_DIR` (default `./data`):
 | `state.json` | `BotState` — rotation, used IDs, sent dates | High — prevents duplicate sends |
 | `serve.lock` | `{pid}\n{startedAt}` — active serve process | Ephemeral — safe to remove if stale |
 | `pairing-qr.svg` | QR code artifact (qr auth mode) | Ephemeral |
+| `health.json` | `HealthState` — dated health entries + posted markers | High — health history; only when webhook enabled |
 
 ---
 
@@ -309,6 +392,44 @@ When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, [`src/ai-reflection.ts`
 
 ---
 
+## Health webhook
+
+Optional feature for posting a daily health report from Apple Shortcuts. Disabled by default (`HEALTH_WEBHOOK_ENABLED=false`).
+
+**Lifecycle:** [`commands.ts`](../src/commands.ts) `serve()` starts [`startHealthServer`](../src/http-server.ts) after the WhatsApp connection opens, and closes it on shutdown. The server is *not* started for any other CLI command. It shares the `serve` process's single Baileys `sender` — this is why it must live in-process (Baileys allows only one session).
+
+**Validation:** [`cli.ts`](../src/cli.ts) calls `validateHealthEnvironment` at startup. When enabled it requires `HEALTH_WEBHOOK_TOKEN` and a group JID (`HEALTH_GROUP_JID`, else `WHATSAPP_GROUP_JID`, ending in `@g.us`). Fails fast otherwise.
+
+**Routes:**
+
+| Method | Path | Auth | Behavior |
+|--------|------|------|----------|
+| `GET` | `/healthz` | none | `{"status":"ok"}` liveness |
+| `POST` | `/health` | bearer token | Validate → store → (post unless already posted today) |
+
+`POST /health?force=true` re-posts even if already posted for that date.
+
+**Rendered report** ([`health-message.ts`](../src/health-message.ts)):
+
+```
+🩺 आज की सेहत रिपोर्ट
+
+👟 कदम: 9,123 ✅
+🏃 व्यायाम: 35 मिनट
+😴 नींद: 7.5 घंटे (अच्छी)
+
+🔥 3 दिन से कदमों का लक्ष्य पूरा — शानदार!
+📊 7-दिन औसत कदम: 7,500
+
+🌱 {AI summary or default encouragement}
+```
+
+The closing line uses [`health-summary.ts`](../src/health-summary.ts) when `AI_PROVIDER` is set (same provider/keys as the quote reflection), validated to a single safe Hindi line; otherwise a built-in encouragement based on whether the step goal was met.
+
+See [HEALTH-SHORTCUT.md](./HEALTH-SHORTCUT.md) for the Shortcut build and curl examples.
+
+---
+
 ## Configuration
 
 Config is loaded via `dotenv` + Zod in [`src/config.ts`](../src/config.ts). Invalid env fails fast at startup with field-level errors.
@@ -325,6 +446,7 @@ See [`.env.example`](../.env.example) for the canonical full list. Grouped summa
 | AI | `AI_PROVIDER`, `OPENAI_*`, `OLLAMA_*`, `AI_TIMEOUT_MS` | `none` |
 | Logging | `LOG_LEVEL` | `info` |
 | Deploy reset | `RESET_AUTH_ON_START`, `RESET_AUTH_TOKEN` | `false` |
+| Health webhook | `HEALTH_WEBHOOK_ENABLED`, `HEALTH_WEBHOOK_PORT`, `HEALTH_WEBHOOK_TOKEN`, `HEALTH_GROUP_JID`, `HEALTH_STEP_GOAL` | `false`, `8080`, —, falls back to `WHATSAPP_GROUP_JID`, `8000` |
 
 Fly.io production overrides many defaults in [`fly.toml`](../fly.toml); secrets (`PAIRING_PHONE_NUMBER`, `WHATSAPP_GROUP_JID`, `OPENAI_API_KEY` or `OLLAMA_API_KEY`) are set via `fly secrets set`.
 
@@ -363,6 +485,11 @@ Vitest tests serve as behavioral specs. Run with `npm test`.
 | AI reflection | `test/ai-reflection.test.ts` |
 | Inbound JID ignore | `test/inbound-jid.test.ts` |
 | State store | `test/state-store.test.ts` |
+| Health payload parsing | `test/health-schema.test.ts` |
+| Health store / streaks | `test/health-store.test.ts` |
+| Health message render | `test/health-message.test.ts` |
+| Health AI summary | `test/health-summary.test.ts` |
+| Health webhook flow / auth | `test/http-server.test.ts` |
 | Commands | `test/commands.test.ts` |
 | Logger | `test/logger.test.ts` |
 
@@ -385,6 +512,11 @@ Additional checks: `npm run typecheck`, `npm run validate:quotes`.
 | Change env vars | `src/config.ts`, `.env.example` |
 | Change selection / fallback logic | `src/quote-source.ts` |
 | Change AI reflection behavior | `src/ai-reflection.ts` |
+| Change health webhook endpoints / auth | `src/http-server.ts` |
+| Change accepted health fields / parsing | `src/health-schema.ts` |
+| Change health report layout | `src/health-message.ts` |
+| Change health insights (streak/average) | `src/health-store.ts` |
+| Change health AI summary | `src/health-summary.ts` |
 
 ---
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { loadConfig, requireGroupJid, requirePairingPhoneNumber } from '../src/config.js';
+import {
+  loadConfig,
+  requireGroupJid,
+  requireHealthGroupJid,
+  requirePairingPhoneNumber,
+  validateHealthEnvironment
+} from '../src/config.js';
 
 describe('config', () => {
   it('loads defaults', () => {
@@ -82,5 +88,66 @@ describe('config', () => {
     expect(requireGroupJid(loadConfig({ WHATSAPP_GROUP_JID: '120363361658284910@g.us' }))).toBe(
       '120363361658284910@g.us'
     );
+  });
+
+  it('loads health webhook defaults (disabled)', () => {
+    const config = loadConfig({});
+    expect(config.healthWebhookEnabled).toBe(false);
+    expect(config.healthWebhookPort).toBe(8080);
+    expect(config.healthStepGoal).toBe(8000);
+    expect(config.healthSleepGoalHours).toBe(6);
+    expect(config.healthStateFile).toMatch(/health\.json$/);
+  });
+
+  it('parses health webhook env vars', () => {
+    const config = loadConfig({
+      HEALTH_WEBHOOK_ENABLED: 'true',
+      HEALTH_WEBHOOK_PORT: '9090',
+      HEALTH_WEBHOOK_TOKEN: 'secret',
+      HEALTH_GROUP_JID: '120363361658284910@g.us',
+      HEALTH_STEP_GOAL: '10000',
+      HEALTH_SLEEP_GOAL_HOURS: '7'
+    });
+
+    expect(config.healthWebhookEnabled).toBe(true);
+    expect(config.healthWebhookPort).toBe(9090);
+    expect(config.healthWebhookToken).toBe('secret');
+    expect(config.healthStepGoal).toBe(10000);
+    expect(config.healthSleepGoalHours).toBe(7);
+  });
+
+  it('validateHealthEnvironment is a no-op when disabled', () => {
+    expect(() => validateHealthEnvironment(loadConfig({}))).not.toThrow();
+  });
+
+  it('validateHealthEnvironment requires a token when enabled', () => {
+    expect(() =>
+      validateHealthEnvironment(
+        loadConfig({ HEALTH_WEBHOOK_ENABLED: 'true', HEALTH_GROUP_JID: '120363361658284910@g.us' })
+      )
+    ).toThrow(/HEALTH_WEBHOOK_TOKEN/);
+  });
+
+  it('validateHealthEnvironment requires a group jid when enabled', () => {
+    expect(() =>
+      validateHealthEnvironment(loadConfig({ HEALTH_WEBHOOK_ENABLED: 'true', HEALTH_WEBHOOK_TOKEN: 'secret' }))
+    ).toThrow(/HEALTH_GROUP_JID/);
+  });
+
+  it('validateHealthEnvironment passes with token and group jid', () => {
+    expect(() =>
+      validateHealthEnvironment(
+        loadConfig({
+          HEALTH_WEBHOOK_ENABLED: 'true',
+          HEALTH_WEBHOOK_TOKEN: 'secret',
+          HEALTH_GROUP_JID: '120363361658284910@g.us'
+        })
+      )
+    ).not.toThrow();
+  });
+
+  it('requireHealthGroupJid falls back to WHATSAPP_GROUP_JID', () => {
+    const config = loadConfig({ WHATSAPP_GROUP_JID: '120363361658284910@g.us' });
+    expect(requireHealthGroupJid(config)).toBe('120363361658284910@g.us');
   });
 });
