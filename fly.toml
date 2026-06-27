@@ -27,6 +27,7 @@ swap_size_mb = 256
   HEALTH_WEBHOOK_ENABLED = "true"
   HEALTH_WEBHOOK_PORT = "8080"
   HEALTH_STEP_GOAL = "8000"
+  HEALTH_SLEEP_GOAL_HOURS = "6"
 
 # HTTP service for the Apple Shortcuts health webhook. auto_stop is disabled so
 # the single long-lived WhatsApp (Baileys) session in the serve process is never
