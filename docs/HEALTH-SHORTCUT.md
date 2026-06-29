@@ -95,13 +95,13 @@ Auth accepts **either** header:
 ### Request body
 
 All fields are optional. Numbers may be sent as numbers **or** strings with
-units (`"8,431 steps"`, `"7.5 hr"`) — the server strips units and separators.
+units (`"8,431 steps"`, `"27000 seconds"`) — the server strips units and separators.
 
 ```json
 {
   "date": "2026-06-21",
   "steps": 9123,
-  "sleepHours": 7.5,
+  "sleepSeconds": 27000,
   "activeEnergyKcal": 520,
   "exerciseMinutes": 35,
   "distanceKm": 6.4,
@@ -134,7 +134,7 @@ To re-post on the same day (e.g. after correcting data), add `?force=true`.
 curl -X POST "https://<app-name>.fly.dev/health" \
   -H "Authorization: Bearer $HEALTH_WEBHOOK_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"steps":9123,"sleepHours":7.5,"activeEnergyKcal":520,"exerciseMinutes":35}'
+  -d '{"steps":9123,"sleepSeconds":27000,"activeEnergyKcal":520,"exerciseMinutes":35}'
 ```
 
 ---
@@ -148,7 +148,7 @@ curl -X POST "https://<app-name>.fly.dev/health" \
 2. Add **Find Health Samples** actions to read each metric for *Today*:
    - Steps → sum → set variable `Steps`
    - Active Energy → sum → `ActiveEnergy`
-   - Sleep → duration in hours → `SleepHours`
+   - Sleep → duration in seconds → `SleepSeconds`
    - Exercise Minutes → sum → `ExerciseMinutes`
 
    Tip: use **Calculate Statistics** (Sum) to reduce samples to one number,
@@ -159,7 +159,7 @@ curl -X POST "https://<app-name>.fly.dev/health" \
    ```json
    {
      "steps": Steps,
-     "sleepHours": SleepHours,
+     "sleepSeconds": SleepSeconds,
      "activeEnergyKcal": ActiveEnergy,
      "exerciseMinutes": ExerciseMinutes
    }

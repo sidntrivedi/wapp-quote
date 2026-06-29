@@ -59,7 +59,7 @@ describe('processHealthWebhook', () => {
     const healthStore = new HealthStore(filePath);
 
     const result = await processHealthWebhook({
-      rawBody: { date: '2026-06-21', steps: 9000, sleepHours: 7.5 },
+      rawBody: { date: '2026-06-21', steps: 9000, sleepSeconds: 27000 },
       force: false,
       config,
       logger: logger as never,
@@ -74,8 +74,10 @@ describe('processHealthWebhook', () => {
     expect(sender.sendText).toHaveBeenCalledOnce();
     expect(sender.sendText.mock.calls[0][0]).toBe(groupJid);
     expect(sender.sendText.mock.calls[0][1]).toContain('👟 Steps: 9,000 / 8,000');
+    expect(sender.sendText.mock.calls[0][1]).toContain('😴 Sleep: 7.5h / 6h ✅');
 
     const state = await healthStore.load();
+    expect(state.entries['2026-06-21'].sleepHours).toBe(7.5);
     expect(state.entries['2026-06-21'].postedAt).toBeDefined();
     expect(state.entries['2026-06-21'].messageId).toBe('msg-1');
   });

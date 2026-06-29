@@ -4,7 +4,7 @@ import type { HealthEntry, HealthWorkout } from './health-types.js';
 
 /**
  * Apple Shortcuts can serialise Health values as numbers or as strings
- * (e.g. "8,431" steps or "7.5 hr"). This coercion strips common units and
+ * (e.g. "8,431" steps or "27000 seconds"). This coercion strips common units and
  * thousands separators before parsing, and treats blank/missing values as
  * undefined rather than failing the whole payload.
  */
@@ -76,7 +76,7 @@ export const healthPayloadSchema = z.object({
   activeEnergyKcal: looseNumber,
   exerciseMinutes: looseNumber,
   standHours: looseNumber,
-  sleepSeconds: looseNumber,   // Apple Shortcuts sends duration in seconds
+  sleepSeconds: looseNumber,
   sleepQuality: looseString,
   restingHeartRate: looseNumber,
   workouts: workoutsSchema.optional(),
@@ -105,7 +105,7 @@ export function parseHealthPayload(
     ...(parsed.activeEnergyKcal !== undefined ? { activeEnergyKcal: Math.round(parsed.activeEnergyKcal) } : {}),
     ...(parsed.exerciseMinutes !== undefined ? { exerciseMinutes: Math.round(parsed.exerciseMinutes) } : {}),
     ...(parsed.standHours !== undefined ? { standHours: Math.round(parsed.standHours) } : {}),
-    ...(parsed.sleepSeconds !== undefined ? { sleepHours: round1(normalizeToHours(parsed.sleepSeconds)) } : {}),
+    ...(parsed.sleepSeconds !== undefined ? { sleepHours: round1(parsed.sleepSeconds / 3600) } : {}),
     ...(parsed.sleepQuality !== undefined ? { sleepQuality: parsed.sleepQuality } : {}),
     ...(parsed.restingHeartRate !== undefined ? { restingHeartRate: Math.round(parsed.restingHeartRate) } : {}),
     ...(workouts.length > 0 ? { workouts } : {}),
@@ -138,19 +138,4 @@ function normalizeDate(value: string | undefined): string | undefined {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
-}
-
-/**
- * Apple Shortcuts returns sleep duration in seconds (e.g. 26280) on iOS 16+
- * with staged sleep tracking. If the value is over 24 it cannot be hours,
- * so we convert: >3600 = seconds, >24 = minutes, otherwise already hours.
- */
-function normalizeToHours(value: number): number {
-  if (value > 3600) {
-    return value / 3600;  // seconds → hours
-  }
-  if (value > 24) {
-    return value / 60;    // minutes → hours
-  }
-  return value;           // already hours
 }

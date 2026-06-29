@@ -25,7 +25,7 @@ describe('parseHealthPayload', () => {
       distanceKm: 6.4,
       activeEnergyKcal: 520,
       exerciseMinutes: 35,
-      sleepHours: 7.5,  // 27000 / 3600 = 7.5
+      sleepHours: 7.5, // 27000 / 3600 = 7.5
       sleepQuality: 'अच्छी',
       restingHeartRate: 58
     });
@@ -37,11 +37,16 @@ describe('parseHealthPayload', () => {
     expect(entry.sleepHours).toBe(7.3); // 26280 / 3600 = 7.3
   });
 
+  it('ignores sleepHours from the incoming payload', () => {
+    const entry = parseHealthPayload({ sleepHours: 7.5 }, { timeZone });
+    expect(entry.sleepHours).toBeUndefined();
+  });
+
   it('coerces stringified numbers with units and separators', () => {
     const entry = parseHealthPayload(
       {
         steps: '9,123 steps',
-        sleepSeconds: '26280 sec',
+        sleepSeconds: '26,280 seconds',
         distanceKm: '6.4 km'
       },
       { timeZone, now: new Date('2026-06-21T16:00:00Z') }

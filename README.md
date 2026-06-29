@@ -140,7 +140,7 @@ Endpoints:
 curl -X POST "https://<app>.fly.dev/health" \
   -H "Authorization: Bearer $HEALTH_WEBHOOK_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"steps":9123,"sleepHours":7.5,"exerciseMinutes":35}'
+  -d '{"steps":9123,"sleepSeconds":27000,"exerciseMinutes":35}'
 ```
 
 The report is posted once per day (use `?force=true` to re-post). Full setup,
