@@ -48,6 +48,7 @@ describe('processHealthWebhook', () => {
   const tempDir = path.join(os.tmpdir(), `wapp-quote-webhook-${process.pid}`);
   const filePath = path.join(tempDir, 'health.json');
   const groupJid = '120363361658284910@g.us';
+  const groupJids = [groupJid];
 
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -65,12 +66,13 @@ describe('processHealthWebhook', () => {
       logger: logger as never,
       sender,
       healthStore,
-      groupJid,
+      groupJids,
       now: new Date('2026-06-21T16:00:00Z')
     });
 
     expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({ status: 'sent', date: '2026-06-21', posted: true, messageId: 'msg-1' });
+    expect(result.body).toMatchObject({ status: 'sent', date: '2026-06-21', posted: true });
+    expect(result.body.results).toEqual([{ jid: groupJid, messageId: 'msg-1' }]);
     expect(sender.sendText).toHaveBeenCalledOnce();
     expect(sender.sendText.mock.calls[0][0]).toBe(groupJid);
     expect(sender.sendText.mock.calls[0][1]).toContain('👟 Steps: 9,000 / 8,000');
@@ -80,6 +82,89 @@ describe('processHealthWebhook', () => {
     expect(state.entries['2026-06-21'].sleepHours).toBe(7.5);
     expect(state.entries['2026-06-21'].postedAt).toBeDefined();
     expect(state.entries['2026-06-21'].messageId).toBe('msg-1');
+    expect(state.entries['2026-06-21'].messageIds).toEqual({ [groupJid]: 'msg-1' });
+  });
+
+  it('posts to multiple groups and records a messageId per group', async () => {
+    const sender = createSender();
+    sender.sendText.mockImplementation((jid: string) => Promise.resolve({ messageId: `msg-${jid}` }));
+    const healthStore = new HealthStore(filePath);
+    const secondJid = '120363999999999999@g.us';
+
+    const result = await processHealthWebhook({
+      rawBody: { date: '2026-06-21', steps: 9000 },
+      force: false,
+      config,
+      logger: logger as never,
+      sender,
+      healthStore,
+      groupJids: [groupJid, secondJid],
+      now: new Date('2026-06-21T16:00:00Z')
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ status: 'sent', posted: true });
+    expect(sender.sendText).toHaveBeenCalledTimes(2);
+    expect(sender.sendText.mock.calls.map((call) => call[0])).toEqual([groupJid, secondJid]);
+
+    const state = await healthStore.load();
+    expect(state.entries['2026-06-21'].messageIds).toEqual({
+      [groupJid]: `msg-${groupJid}`,
+      [secondJid]: `msg-${secondJid}`
+    });
+  });
+
+  it('posts to the remaining group when one group fails and reports the failure', async () => {
+    const sender = createSender();
+    const secondJid = '120363999999999999@g.us';
+    sender.sendText.mockImplementation((jid: string) =>
+      jid === secondJid ? Promise.reject(new Error('send failed')) : Promise.resolve({ messageId: 'msg-1' })
+    );
+    const healthStore = new HealthStore(filePath);
+
+    const result = await processHealthWebhook({
+      rawBody: { date: '2026-06-21', steps: 9000 },
+      force: false,
+      config,
+      logger: logger as never,
+      sender,
+      healthStore,
+      groupJids: [groupJid, secondJid],
+      now: new Date('2026-06-21T16:00:00Z')
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ status: 'sent', posted: true });
+    expect(result.body.results).toEqual([
+      { jid: groupJid, messageId: 'msg-1' },
+      { jid: secondJid, error: 'send failed' }
+    ]);
+
+    const state = await healthStore.load();
+    expect(state.entries['2026-06-21'].postedAt).toBeDefined();
+    expect(state.entries['2026-06-21'].messageIds).toEqual({ [groupJid]: 'msg-1' });
+  });
+
+  it('throws when all groups fail to receive the message', async () => {
+    const sender = createSender();
+    sender.sendText.mockRejectedValue(new Error('send failed'));
+    const healthStore = new HealthStore(filePath);
+
+    await expect(
+      processHealthWebhook({
+        rawBody: { date: '2026-06-21', steps: 9000 },
+        force: false,
+        config,
+        logger: logger as never,
+        sender,
+        healthStore,
+        groupJids: [groupJid],
+        now: new Date('2026-06-21T16:00:00Z')
+      })
+    ).rejects.toThrow('send failed');
+
+    const state = await healthStore.load();
+    expect(state.entries['2026-06-21'].postedAt).toBeUndefined();
   });
 
   it('returns 400 for an invalid payload', async () => {
@@ -91,7 +176,7 @@ describe('processHealthWebhook', () => {
       logger: logger as never,
       sender,
       healthStore: new HealthStore(filePath),
-      groupJid
+      groupJids
     });
 
     expect(result.status).toBe(400);
@@ -104,7 +189,7 @@ describe('processHealthWebhook', () => {
     const healthStore = new HealthStore(filePath);
     const now = new Date('2026-06-21T16:00:00Z');
 
-    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJid, now });
+    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now });
     expect(sender.sendText).toHaveBeenCalledOnce();
 
     const second = await processHealthWebhook({
@@ -114,7 +199,7 @@ describe('processHealthWebhook', () => {
       logger: logger as never,
       sender,
       healthStore,
-      groupJid,
+      groupJids,
       now
     });
 
@@ -132,8 +217,8 @@ describe('processHealthWebhook', () => {
     const healthStore = new HealthStore(filePath);
     const now = new Date('2026-06-21T16:00:00Z');
 
-    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJid, now });
-    const forced = await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: true, config, logger: logger as never, sender, healthStore, groupJid, now });
+    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now });
+    const forced = await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: true, config, logger: logger as never, sender, healthStore, groupJids, now });
 
     expect(forced.body).toMatchObject({ status: 'sent', posted: true });
     expect(sender.sendText).toHaveBeenCalledTimes(2);
@@ -143,8 +228,8 @@ describe('processHealthWebhook', () => {
     const sender = createSender();
     const healthStore = new HealthStore(filePath);
 
-    await processHealthWebhook({ rawBody: { date: '2026-06-20', steps: 8500 }, force: false, config, logger: logger as never, sender, healthStore, groupJid, now: new Date('2026-06-20T16:00:00Z') });
-    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJid, now: new Date('2026-06-21T16:00:00Z') });
+    await processHealthWebhook({ rawBody: { date: '2026-06-20', steps: 8500 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now: new Date('2026-06-20T16:00:00Z') });
+    await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now: new Date('2026-06-21T16:00:00Z') });
 
     const lastMessage = sender.sendText.mock.calls[1][1] as string;
     expect(lastMessage).toContain('Streak: 2 days');

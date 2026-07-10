@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
-import { requireGroupJid, requireHealthGroupJid } from './config.js';
+import { requireGroupJid, requireHealthGroupJids } from './config.js';
 import { HealthStore } from './health-store.js';
 import { startHealthServer, type HealthServerHandle } from './http-server.js';
 import { getQuoteForPreview } from './quotes.js';
@@ -73,7 +73,7 @@ async function serve(options: {
       logger: options.logger,
       sender: options.sender,
       healthStore: new HealthStore(options.config.healthStateFile),
-      groupJid: requireHealthGroupJid(options.config)
+      groupJids: requireHealthGroupJids(options.config)
     });
   }
 

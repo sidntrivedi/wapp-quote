@@ -72,11 +72,21 @@ describe('upsertEntry', () => {
 });
 
 describe('markPosted', () => {
-  it('records postedAt and messageId', () => {
+  it('records postedAt and messageIds', () => {
     const base = upsertEntry({ entries: {} }, entry('2026-06-21', 100));
-    const next = markPosted(base, '2026-06-21', '2026-06-21T12:00:00.000Z', 'msg-9');
+    const next = markPosted(base, '2026-06-21', '2026-06-21T12:00:00.000Z', { '111@g.us': 'msg-9' });
     expect(next.entries['2026-06-21'].postedAt).toBe('2026-06-21T12:00:00.000Z');
+    expect(next.entries['2026-06-21'].messageIds).toEqual({ '111@g.us': 'msg-9' });
     expect(next.entries['2026-06-21'].messageId).toBe('msg-9');
+  });
+
+  it('records messageIds for multiple groups', () => {
+    const base = upsertEntry({ entries: {} }, entry('2026-06-21', 100));
+    const next = markPosted(base, '2026-06-21', '2026-06-21T12:00:00.000Z', {
+      '111@g.us': 'msg-9',
+      '222@g.us': 'msg-10'
+    });
+    expect(next.entries['2026-06-21'].messageIds).toEqual({ '111@g.us': 'msg-9', '222@g.us': 'msg-10' });
   });
 
   it('is a no-op for an unknown date', () => {

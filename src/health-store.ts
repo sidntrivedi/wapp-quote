@@ -72,6 +72,9 @@ export function upsertEntry(state: HealthState, entry: HealthEntry): HealthState
   if (existing?.messageId && entry.messageId === undefined) {
     merged.messageId = existing.messageId;
   }
+  if (existing?.messageIds && entry.messageIds === undefined) {
+    merged.messageIds = existing.messageIds;
+  }
 
   return {
     entries: {
@@ -85,12 +88,14 @@ export function markPosted(
   state: HealthState,
   date: string,
   postedAt: string,
-  messageId?: string
+  messageIds?: Record<string, string>
 ): HealthState {
   const existing = state.entries[date];
   if (!existing) {
     return state;
   }
+
+  const firstMessageId = messageIds ? Object.values(messageIds)[0] : undefined;
 
   return {
     entries: {
@@ -98,7 +103,9 @@ export function markPosted(
       [date]: {
         ...existing,
         postedAt,
-        ...(messageId ? { messageId } : {})
+        ...(messageIds && Object.keys(messageIds).length > 0 ? { messageIds } : {}),
+        // Kept for backward compatibility with older readers/tests.
+        ...(firstMessageId ? { messageId: firstMessageId } : {})
       }
     }
   };

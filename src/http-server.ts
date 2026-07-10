@@ -35,7 +35,7 @@ export async function processHealthWebhook(options: {
   logger: Logger;
   sender: Pick<WhatsAppSender, 'ensureConnected' | 'sendText'>;
   healthStore: HealthStore;
-  groupJid: string;
+  groupJids: string[];
   now?: Date;
 }): Promise<HealthWebhookResult> {
   const now = options.now ?? new Date();
@@ -75,20 +75,57 @@ export async function processHealthWebhook(options: {
   const message = renderHealthMessage({ entry: mergedEntry, insights });
 
   await options.sender.ensureConnected();
-  const sendResult = await sendWithRetry(() => options.sender.sendText(options.groupJid, message), 3);
 
-  const postedState = markPosted(stateWithEntry, mergedEntry.date, now.toISOString(), sendResult.messageId);
+  const outcomes = await Promise.allSettled(
+    options.groupJids.map((jid) => sendWithRetry(() => options.sender.sendText(jid, message), 3).then((result) => ({ jid, result })))
+  );
+
+  const sent: Array<{ jid: string; messageId?: string }> = [];
+  const failed: Array<{ jid: string; error: string }> = [];
+
+  outcomes.forEach((outcome, index) => {
+    const jid = options.groupJids[index];
+    if (outcome.status === 'fulfilled') {
+      sent.push({ jid, messageId: outcome.value.result.messageId });
+    } else {
+      failed.push({ jid, error: describeError(outcome.reason) });
+    }
+  });
+
+  if (sent.length === 0) {
+    options.logger.error({ date: entry.date, failed }, 'health report failed to post to all groups');
+    throw failed.length === 1 ? new Error(failed[0].error) : new Error('health report failed to post to all groups');
+  }
+
+  const messageIds = Object.fromEntries(sent.filter((s) => s.messageId).map((s) => [s.jid, s.messageId as string]));
+  const postedState = markPosted(stateWithEntry, mergedEntry.date, now.toISOString(), messageIds);
   await options.healthStore.save(postedState);
 
+  if (failed.length > 0) {
+    options.logger.warn({ date: entry.date, failed }, 'health report failed to post to some groups');
+  }
+
   options.logger.info(
-    { date: entry.date, messageId: sendResult.messageId, steps: mergedEntry.steps, streak: insights.streakDays },
+    { date: entry.date, messageIds, steps: mergedEntry.steps, streak: insights.streakDays },
     'health report posted to WhatsApp'
   );
 
   return {
     status: 200,
-    body: { status: 'sent', date: entry.date, posted: true, messageId: sendResult.messageId }
+    body: {
+      status: 'sent',
+      date: entry.date,
+      posted: true,
+      results: [
+        ...sent.map((s) => ({ jid: s.jid, messageId: s.messageId })),
+        ...failed.map((f) => ({ jid: f.jid, error: f.error }))
+      ]
+    }
   };
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildInsights(state: HealthState, date: string, stepGoal: number, sleepGoalHours: number): HealthInsights {
@@ -121,7 +158,7 @@ export async function startHealthServer(options: {
   logger: Logger;
   sender: Pick<WhatsAppSender, 'ensureConnected' | 'sendText'>;
   healthStore: HealthStore;
-  groupJid: string;
+  groupJids: string[];
 }): Promise<HealthServerHandle> {
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, options).catch((error: unknown) => {
@@ -161,7 +198,7 @@ async function handleRequest(
     logger: Logger;
     sender: Pick<WhatsAppSender, 'ensureConnected' | 'sendText'>;
     healthStore: HealthStore;
-    groupJid: string;
+    groupJids: string[];
   }
 ): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -197,7 +234,7 @@ async function handleRequest(
     logger: options.logger,
     sender: options.sender,
     healthStore: options.healthStore,
-    groupJid: options.groupJid
+    groupJids: options.groupJids
   });
 
   sendJson(res, result.status, result.body);

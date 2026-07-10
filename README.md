@@ -100,7 +100,7 @@ See `.env.example` for the full list. Key variables:
 | `HEALTH_WEBHOOK_ENABLED` | `false` | Enable the Apple Shortcuts health webhook |
 | `HEALTH_WEBHOOK_PORT` | `8080` | Port the webhook listens on |
 | `HEALTH_WEBHOOK_TOKEN` | — | Bearer secret; required when the webhook is enabled |
-| `HEALTH_GROUP_JID` | — | Group for health reports (falls back to `WHATSAPP_GROUP_JID`) |
+| `HEALTH_GROUP_JID` | — | Group(s) for health reports, comma-separated for more than one (falls back to `WHATSAPP_GROUP_JID`) |
 | `HEALTH_STEP_GOAL` | `8000` | Daily steps goal for the ✅ mark and streaks |
 
 **Wikiquote modes**
@@ -128,6 +128,8 @@ process or login.
 HEALTH_WEBHOOK_ENABLED=true
 HEALTH_WEBHOOK_TOKEN=$(openssl rand -hex 32)
 HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us   # optional; defaults to WHATSAPP_GROUP_JID
+# comma-separate to post to more than one group:
+# HEALTH_GROUP_JID=120363aaa...@g.us,120363bbb...@g.us
 HEALTH_STEP_GOAL=8000
 ```
 
@@ -175,8 +177,9 @@ already turns the feature on and exposes HTTPS):
 
 ```bash
 fly secrets set HEALTH_WEBHOOK_TOKEN="$(openssl rand -hex 32)" --app <your-app-name>
-# optional, if health reports go to a different group:
+# optional, if health reports go to a different group (or two, comma-separated):
 fly secrets set HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us --app <your-app-name>
+# fly secrets set HEALTH_GROUP_JID=120363aaa...@g.us,120363bbb...@g.us --app <your-app-name>
 ```
 
 On first deploy, watch `fly logs` for the pairing code. Auth is stored on the volume at `/app/data/auth`.

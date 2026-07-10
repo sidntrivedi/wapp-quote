@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   loadConfig,
   requireGroupJid,
-  requireHealthGroupJid,
+  requireHealthGroupJids,
   requirePairingPhoneNumber,
   validateHealthEnvironment
 } from '../src/config.js';
@@ -146,8 +146,29 @@ describe('config', () => {
     ).not.toThrow();
   });
 
-  it('requireHealthGroupJid falls back to WHATSAPP_GROUP_JID', () => {
+  it('requireHealthGroupJids falls back to WHATSAPP_GROUP_JID', () => {
     const config = loadConfig({ WHATSAPP_GROUP_JID: '120363361658284910@g.us' });
-    expect(requireHealthGroupJid(config)).toBe('120363361658284910@g.us');
+    expect(requireHealthGroupJids(config)).toEqual(['120363361658284910@g.us']);
+  });
+
+  it('requireHealthGroupJids parses a comma-separated HEALTH_GROUP_JID list', () => {
+    const config = loadConfig({
+      HEALTH_GROUP_JID: '120363111111111111@g.us, 120363222222222222@g.us'
+    });
+    expect(requireHealthGroupJids(config)).toEqual([
+      '120363111111111111@g.us',
+      '120363222222222222@g.us'
+    ]);
+  });
+
+  it('requireHealthGroupJids rejects an invalid entry in the list', () => {
+    const config = loadConfig({
+      HEALTH_GROUP_JID: '120363111111111111@g.us,919999999999@s.whatsapp.net'
+    });
+    expect(() => requireHealthGroupJids(config)).toThrow(/@g\.us/);
+  });
+
+  it('requireHealthGroupJids throws when no group jid is configured', () => {
+    expect(() => requireHealthGroupJids(loadConfig({}))).toThrow(/HEALTH_GROUP_JID/);
   });
 });

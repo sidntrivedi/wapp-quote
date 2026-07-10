@@ -283,9 +283,9 @@ sequenceDiagram
         HS->>Store: stepGoalStreak + trailingStepsAverage
         HS->>AI: generateHealthSummary (optional)
         HS->>Msg: renderHealthMessage
-        HS->>WA: ensureConnected + sendText (3 retries)
+        HS->>WA: ensureConnected + sendText per group (3 retries each)
         HS->>Store: markPosted + save
-        HS-->>SC: 200 {status: sent, messageId}
+        HS-->>SC: 200 {status: sent, results: [{jid, messageId}]}
     end
 ```
 
@@ -293,6 +293,7 @@ sequenceDiagram
 - Idempotency: `postedAt` per date in `health.json`; same-day reposts require `?force=true`.
 - The payload is stored before sending, so partial payloads accumulate; a later payload for the same date refines the entry.
 - Send shares the single live Baileys session via the same `sender` injected into `serve`.
+- **Multiple groups**: `HEALTH_GROUP_JID` may be a comma-separated list. The report is rendered once and sent to every JID in parallel (`Promise.allSettled`). The day is marked posted if **at least one** group succeeds; per-group failures are logged and returned in `results` without blocking the other sends. The request only fails (500, not marked posted) if every group fails.
 
 ---
 
@@ -347,7 +348,8 @@ type HealthEntry = {
   notes?: string;
   receivedAt: string;        // ISO timestamp of ingest
   postedAt?: string;         // ISO timestamp when posted to WhatsApp
-  messageId?: string;
+  messageId?: string;      // legacy single-group id, kept for back-compat reads
+  messageIds?: Record<string, string>; // messageId per group JID, when HEALTH_GROUP_JID lists multiple groups
 };
 
 type HealthState = { entries: Record<string, HealthEntry> };  // keyed by date
@@ -398,7 +400,7 @@ Optional feature for posting a daily health report from Apple Shortcuts. Disable
 
 **Lifecycle:** [`commands.ts`](../src/commands.ts) `serve()` starts [`startHealthServer`](../src/http-server.ts) after the WhatsApp connection opens, and closes it on shutdown. The server is *not* started for any other CLI command. It shares the `serve` process's single Baileys `sender` — this is why it must live in-process (Baileys allows only one session).
 
-**Validation:** [`cli.ts`](../src/cli.ts) calls `validateHealthEnvironment` at startup. When enabled it requires `HEALTH_WEBHOOK_TOKEN` and a group JID (`HEALTH_GROUP_JID`, else `WHATSAPP_GROUP_JID`, ending in `@g.us`). Fails fast otherwise.
+**Validation:** [`cli.ts`](../src/cli.ts) calls `validateHealthEnvironment` at startup. When enabled it requires `HEALTH_WEBHOOK_TOKEN` and at least one group JID (`HEALTH_GROUP_JID`, else `WHATSAPP_GROUP_JID`, each ending in `@g.us`). `HEALTH_GROUP_JID` may be a comma-separated list to post to multiple groups (`requireHealthGroupJids` in [`config.ts`](../src/config.ts)). Fails fast otherwise.
 
 **Routes:**
 
@@ -446,7 +448,7 @@ See [`.env.example`](../.env.example) for the canonical full list. Grouped summa
 | AI | `AI_PROVIDER`, `OPENAI_*`, `OLLAMA_*`, `AI_TIMEOUT_MS` | `none` |
 | Logging | `LOG_LEVEL` | `info` |
 | Deploy reset | `RESET_AUTH_ON_START`, `RESET_AUTH_TOKEN` | `false` |
-| Health webhook | `HEALTH_WEBHOOK_ENABLED`, `HEALTH_WEBHOOK_PORT`, `HEALTH_WEBHOOK_TOKEN`, `HEALTH_GROUP_JID`, `HEALTH_STEP_GOAL` | `false`, `8080`, —, falls back to `WHATSAPP_GROUP_JID`, `8000` |
+| Health webhook | `HEALTH_WEBHOOK_ENABLED`, `HEALTH_WEBHOOK_PORT`, `HEALTH_WEBHOOK_TOKEN`, `HEALTH_GROUP_JID` (comma-separated list supported), `HEALTH_STEP_GOAL` | `false`, `8080`, —, falls back to `WHATSAPP_GROUP_JID`, `8000` |
 
 Fly.io production overrides many defaults in [`fly.toml`](../fly.toml); secrets (`PAIRING_PHONE_NUMBER`, `WHATSAPP_GROUP_JID`, `OPENAI_API_KEY` or `OLLAMA_API_KEY`) are set via `fly secrets set`.
 

@@ -18,7 +18,10 @@ export type HealthEntry = {
   notes?: string;
   receivedAt: string;
   postedAt?: string;
+  /** Legacy single-group message id, kept for backward-compatible reads. */
   messageId?: string;
+  /** Message id per group JID it was posted to. */
+  messageIds?: Record<string, string>;
 };
 
 export type HealthState = {

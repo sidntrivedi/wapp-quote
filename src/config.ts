@@ -71,7 +71,7 @@ export type AppConfig = {
   healthWebhookEnabled: boolean;
   healthWebhookPort: number;
   healthWebhookToken?: string;
-  healthGroupJid?: string;
+  healthGroupJids: string[];
   healthStepGoal: number;
   healthSleepGoalHours: number;
   healthStateFile: string;
@@ -109,11 +109,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     healthWebhookEnabled: parsed.HEALTH_WEBHOOK_ENABLED,
     healthWebhookPort: parsed.HEALTH_WEBHOOK_PORT,
     healthWebhookToken: parsed.HEALTH_WEBHOOK_TOKEN,
-    healthGroupJid: parsed.HEALTH_GROUP_JID,
+    healthGroupJids: parseGroupJids(parsed.HEALTH_GROUP_JID),
     healthStepGoal: parsed.HEALTH_STEP_GOAL,
     healthSleepGoalHours: parsed.HEALTH_SLEEP_GOAL_HOURS,
     healthStateFile: path.resolve(parsed.STATE_FILE ? path.join(path.dirname(parsed.STATE_FILE), 'health.json') : path.join(dataDir, 'health.json'))
   };
+}
+
+function parseGroupJids(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((jid) => jid.trim())
+    .filter(Boolean);
 }
 
 function parseWikiquoteCategories(value: string | undefined): string[] {
@@ -166,27 +177,28 @@ export function validateHealthEnvironment(config: AppConfig): void {
     throw new Error('HEALTH_WEBHOOK_TOKEN is required when HEALTH_WEBHOOK_ENABLED=true. Set a long random secret.');
   }
 
-  const groupJid = config.healthGroupJid ?? config.groupJid;
-  if (!groupJid) {
+  requireHealthGroupJids(config);
+}
+
+/**
+ * Resolve the list of group JIDs health reports should be posted to.
+ * `HEALTH_GROUP_JID` accepts a comma-separated list (e.g. two family groups);
+ * falls back to the single `WHATSAPP_GROUP_JID` when unset.
+ */
+export function requireHealthGroupJids(config: AppConfig): string[] {
+  const groupJids = config.healthGroupJids.length > 0 ? config.healthGroupJids : config.groupJid ? [config.groupJid] : [];
+
+  if (groupJids.length === 0) {
     throw new Error('HEALTH_GROUP_JID (or WHATSAPP_GROUP_JID) is required when HEALTH_WEBHOOK_ENABLED=true.');
   }
 
-  if (!groupJid.endsWith('@g.us')) {
-    throw new Error(`Health target must be a group JID ending with @g.us. Got: ${groupJid}`);
-  }
-}
-
-export function requireHealthGroupJid(config: AppConfig): string {
-  const groupJid = config.healthGroupJid ?? config.groupJid;
-  if (!groupJid) {
-    throw new Error('HEALTH_GROUP_JID (or WHATSAPP_GROUP_JID) is required to post health reports.');
+  for (const groupJid of groupJids) {
+    if (!groupJid.endsWith('@g.us')) {
+      throw new Error(`Health target must be a group JID ending with @g.us. Got: ${groupJid}`);
+    }
   }
 
-  if (!groupJid.endsWith('@g.us')) {
-    throw new Error(`Health target must be a group JID ending with @g.us. Got: ${groupJid}`);
-  }
-
-  return groupJid;
+  return groupJids;
 }
 
 export function requirePairingPhoneNumber(config: AppConfig): string {

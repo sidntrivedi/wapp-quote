@@ -121,10 +121,16 @@ units (`"8,431 steps"`, `"27000 seconds"`) — the server strips units and separ
 
 | Status | Body                                                              | Meaning                              |
 |--------|-------------------------------------------------------------------|--------------------------------------|
-| 200    | `{"status":"sent","date":"…","posted":true,"messageId":"…"}`      | Stored and posted to WhatsApp        |
+| 200    | `{"status":"sent","date":"…","posted":true,"results":[{"jid":"…","messageId":"…"}]}` | Stored and posted to WhatsApp (one entry per configured group) |
 | 200    | `{"status":"stored","posted":false,"reason":"already_posted"}`    | Already posted today (idempotent)    |
 | 400    | `{"error":"invalid_payload"}` / `{"error":"invalid_json"}`        | Bad body                             |
 | 401    | `{"error":"unauthorized"}`                                        | Missing/wrong token                  |
+
+When multiple groups are configured, `results` includes one entry per group:
+`{"jid":"...","messageId":"..."}` on success or `{"jid":"...","error":"..."}` if
+that group's send failed. The overall response is still `"status":"sent"` as
+long as at least one group received the message; the day is only left
+unposted (and the request fails with a 500) if **every** group failed.
 
 To re-post on the same day (e.g. after correcting data), add `?force=true`.
 
@@ -207,4 +213,5 @@ curl -X POST "https://<app-name>.fly.dev/health" \
 | `400 invalid_json` | The body isn't valid JSON. Use the JSON request body type. |
 | Nothing posts but `200 stored` | Already posted today. Use `?force=true` to re-post. |
 | Connection refused | Webhook disabled or wrong port. Set `HEALTH_WEBHOOK_ENABLED=true`. |
-| Posted to the wrong group | Set `HEALTH_GROUP_JID` to the intended group. Run `npm run dev -- list-groups` to find the JID. |
+| Posted to the wrong group | Set `HEALTH_GROUP_JID` to the intended group(s) (comma-separated for more than one). Run `npm run dev -- list-groups` to find JIDs. |
+| Posted to only one of two groups | Check the webhook response `results` array / server logs for a per-group `error`. The other group's send is retried independently and unaffected. |
