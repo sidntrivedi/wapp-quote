@@ -12,7 +12,7 @@ export type DailyScheduleHandle = {
 type CatchUpTrigger = 'missed' | 'catch-up';
 
 export function startDailySchedule(options: {
-  quoteTime: string;
+  scheduleTime: string;
   timeZone: string;
   logger: Logger;
   task: () => Promise<void>;
@@ -21,21 +21,21 @@ export function startDailySchedule(options: {
   catchUpIntervalMs?: number;
   catchUpEnabled?: boolean;
 }): DailyScheduleHandle {
-  const expression = cronExpressionForTime(options.quoteTime);
+  const expression = cronExpressionForTime(options.scheduleTime);
   const missedExecutionToleranceMs = options.missedExecutionToleranceMs ?? DEFAULT_MISSED_EXECUTION_TOLERANCE_MS;
   const catchUpIntervalMs = options.catchUpIntervalMs ?? DEFAULT_CATCH_UP_INTERVAL_MS;
   let expiredCatchUpLoggedForDateKey: string | undefined;
 
   options.logger.info(
     { expression, timeZone: options.timeZone, missedExecutionToleranceMs, catchUpIntervalMs },
-    'starting daily quote schedule'
+    'starting daily Gita schedule'
   );
 
   let sendInFlight = false;
 
   const runTask = async (reason: 'scheduled' | CatchUpTrigger): Promise<void> => {
     if (sendInFlight) {
-      options.logger.debug({ reason }, 'daily quote send already in flight; skipping');
+      options.logger.debug({ reason }, 'daily Gita send already in flight; skipping');
       return;
     }
 
@@ -111,7 +111,7 @@ export function startDailySchedule(options: {
 
 async function maybeRunCatchUp(params: {
   options: {
-    quoteTime: string;
+    scheduleTime: string;
     timeZone: string;
     logger: Logger;
     hasSentToday?: () => Promise<boolean>;
@@ -128,9 +128,9 @@ async function maybeRunCatchUp(params: {
     return;
   }
 
-  const eligibility = getCatchUpEligibility(now, params.options.quoteTime, params.options.timeZone);
+  const eligibility = getCatchUpEligibility(now, params.options.scheduleTime, params.options.timeZone);
 
-  if (eligibility.reason === 'before-quote-time') {
+  if (eligibility.reason === 'before-schedule-time') {
     return;
   }
 
@@ -138,7 +138,7 @@ async function maybeRunCatchUp(params: {
     logCatchUpWindowExpired({
       logger: params.options.logger,
       dateKey,
-      quoteTime: params.options.quoteTime,
+      scheduleTime: params.options.scheduleTime,
       trigger: params.trigger,
       eligibility,
       getExpiredCatchUpLoggedForDateKey: params.getExpiredCatchUpLoggedForDateKey,
@@ -151,11 +151,11 @@ async function maybeRunCatchUp(params: {
     {
       trigger: params.trigger,
       dateKey,
-      quoteTime: params.options.quoteTime,
+      scheduleTime: params.options.scheduleTime,
       catchUpDeadline: eligibility.catchUpDeadline,
-      minutesPastQuoteTime: eligibility.minutesPastQuoteTime
+      minutesPastScheduleTime: eligibility.minutesPastScheduleTime
     },
-    'daily quote not sent yet within catch-up window; running catch-up send'
+    'daily Gita message not sent yet within catch-up window; running catch-up send'
   );
   await params.runTask(params.trigger);
 }
@@ -163,7 +163,7 @@ async function maybeRunCatchUp(params: {
 function logCatchUpWindowExpired(options: {
   logger: Logger;
   dateKey: string;
-  quoteTime: string;
+  scheduleTime: string;
   trigger: CatchUpTrigger;
   eligibility: CatchUpEligibility;
   getExpiredCatchUpLoggedForDateKey: () => string | undefined;
@@ -178,15 +178,15 @@ function logCatchUpWindowExpired(options: {
     {
       dateKey: options.dateKey,
       trigger: options.trigger,
-      quoteTime: options.quoteTime,
+      scheduleTime: options.scheduleTime,
       catchUpDeadline: options.eligibility.catchUpDeadline,
-      minutesPastQuoteTime: options.eligibility.minutesPastQuoteTime
+      minutesPastScheduleTime: options.eligibility.minutesPastScheduleTime
     },
-    'daily quote catch-up skipped; catch-up window expired for today'
+    'daily Gita catch-up skipped; catch-up window expired for today'
   );
 }
 
 function logTaskFailure(logger: Logger, error: unknown): void {
   const err = error instanceof Error ? error : new Error(String(error));
-  logger.error({ err, message: err.message, stack: err.stack }, 'scheduled quote send failed');
+  logger.error({ err, message: err.message, stack: err.stack }, 'scheduled Gita send failed');
 }

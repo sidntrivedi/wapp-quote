@@ -10,17 +10,13 @@ describe('startDailySchedule', () => {
     vi.useRealTimers();
   });
 
-  it('runs catch-up after quote time when today is not sent', async () => {
+  it('runs catch-up after schedule time when today is not sent', async () => {
     const task = vi.fn().mockResolvedValue(undefined);
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn()
-    };
+    const logger = createLogger();
+    vi.setSystemTime(new Date('2026-06-21T00:00:00.000Z'));
 
     const handle = startDailySchedule({
-      quoteTime: '06:00',
+      scheduleTime: '06:00',
       timeZone: 'Asia/Kolkata',
       logger: logger as never,
       hasSentToday: async () => false,
@@ -35,17 +31,13 @@ describe('startDailySchedule', () => {
     handle.stop();
   });
 
-  it('skips catch-up before quote time and when already sent', async () => {
+  it('skips catch-up when already sent', async () => {
     const task = vi.fn().mockResolvedValue(undefined);
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn()
-    };
+    const logger = createLogger();
+    vi.setSystemTime(new Date('2026-06-21T00:00:00.000Z'));
 
     const handle = startDailySchedule({
-      quoteTime: '06:00',
+      scheduleTime: '06:00',
       timeZone: 'Asia/Kolkata',
       logger: logger as never,
       hasSentToday: async () => true,
@@ -62,15 +54,11 @@ describe('startDailySchedule', () => {
 
   it('skips catch-up after the four-hour window and logs once', async () => {
     const task = vi.fn().mockResolvedValue(undefined);
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn()
-    };
+    const logger = createLogger();
+    vi.setSystemTime(new Date('2026-06-21T00:00:00.000Z'));
 
     const handle = startDailySchedule({
-      quoteTime: '06:00',
+      scheduleTime: '06:00',
       timeZone: 'Asia/Kolkata',
       logger: logger as never,
       hasSentToday: async () => false,
@@ -84,22 +72,17 @@ describe('startDailySchedule', () => {
 
     expect(task).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledTimes(1);
-    expect(logger.warn.mock.calls[0]?.[1]).toBe('daily quote catch-up skipped; catch-up window expired for today');
+    expect(logger.warn.mock.calls[0]?.[1]).toBe('daily Gita catch-up skipped; catch-up window expired for today');
 
     handle.stop();
   });
 
   it('does not start interval catch-up when disabled', async () => {
     const task = vi.fn().mockResolvedValue(undefined);
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn()
-    };
+    const logger = createLogger();
 
     const handle = startDailySchedule({
-      quoteTime: '06:00',
+      scheduleTime: '06:00',
       timeZone: 'Asia/Kolkata',
       logger: logger as never,
       hasSentToday: async () => false,
@@ -116,3 +99,12 @@ describe('startDailySchedule', () => {
     handle.stop();
   });
 });
+
+function createLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
+  };
+}

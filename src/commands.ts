@@ -1,20 +1,16 @@
 import fs from 'node:fs/promises';
-import process from 'node:process';
 import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
 import { requireGroupJid, requireHealthGroupJids } from './config.js';
+import { localDateKey } from './date.js';
+import { fetchGitaVerse, gitaPositionFromIndex } from './gita.js';
+import { runDailyGita } from './gita-runner.js';
 import { HealthStore } from './health-store.js';
 import { startHealthServer, type HealthServerHandle } from './http-server.js';
-import { getQuoteForPreview } from './quotes.js';
-import { ScheduledAuthorUnavailableError, selectQuote } from './quote-source.js';
-import { runDailyQuote } from './quote-runner.js';
-import { renderQuoteMessage } from './message.js';
-import { localDateKey } from './date.js';
+import { renderGitaMessage } from './message.js';
 import { startDailySchedule } from './scheduler.js';
 import { acquireServeLock, assertServeNotRunning, releaseServeLock } from './serve-lock.js';
 import { StateStore } from './state-store.js';
-import { enrichQuoteReflection } from './ai-reflection.js';
-import type { Quote } from './types.js';
 import type { WhatsAppSender } from './types.js';
 
 export type Command = 'serve' | 'pair' | 'pair-qr' | 'reset-auth' | 'list-groups' | 'send-now' | 'preview' | 'help';
@@ -78,17 +74,17 @@ async function serve(options: {
   }
 
   startDailySchedule({
-    quoteTime: options.config.quoteTime,
+    scheduleTime: options.config.gitaTime,
     timeZone: options.config.timeZone,
     logger: options.logger,
-    catchUpEnabled: options.config.quoteCatchUp,
+    catchUpEnabled: options.config.gitaCatchUp,
     hasSentToday: async () => {
       const state = await options.stateStore.load();
       const dateKey = localDateKey(new Date(), options.config.timeZone);
       return Boolean(state.sentDates[dateKey]);
     },
     task: async () => {
-      await runScheduledDailyQuote({
+      await runScheduledDailyGita({
         config: options.config,
         logger: options.logger,
         sender: options.sender,
@@ -108,7 +104,7 @@ async function serve(options: {
   }
 }
 
-async function runScheduledDailyQuote(options: {
+async function runScheduledDailyGita(options: {
   config: AppConfig;
   logger: Logger;
   sender: WhatsAppSender;
@@ -122,29 +118,23 @@ async function runScheduledDailyQuote(options: {
     try {
       await options.sender.ensureConnected();
       const state = await options.stateStore.load();
-      const result = await runDailyQuote({
+      const result = await runDailyGita({
         sender: options.sender,
         state,
         groupJid: options.groupJid,
         now: new Date(),
         timeZone: options.config.timeZone,
-        selectQuote: (currentState) =>
-          selectQuote({
-            config: options.config,
-            state: currentState,
-            logger: options.logger
-          }),
-        renderMessage: (quote) => renderMessageWithAiReflection(quote, options.config, options.logger)
+        config: options.config
       });
 
       if (result.status === 'sent') {
         await options.stateStore.save(result.nextState);
         options.logger.info(
-          { dateKey: result.dateKey, quoteId: result.quoteId, messageId: result.messageId, attempt },
-          'daily quote sent'
+          { dateKey: result.dateKey, verseId: result.verseId, messageId: result.messageId, attempt },
+          'daily Gita message sent'
         );
       } else {
-        options.logger.info({ dateKey: result.dateKey, quoteId: result.quoteId, attempt }, 'daily quote already sent');
+        options.logger.info({ dateKey: result.dateKey, verseId: result.verseId, attempt }, 'daily Gita message already sent');
       }
 
       return;
@@ -152,12 +142,12 @@ async function runScheduledDailyQuote(options: {
       const state = await options.stateStore.load();
       const dateKey = localDateKey(new Date(), options.config.timeZone);
       if (state.sentDates[dateKey]) {
-        options.logger.warn({ error, attempt, dateKey }, 'daily quote already recorded for today; not retrying');
+        options.logger.warn({ error, attempt, dateKey }, 'daily Gita message already recorded for today; not retrying');
         return;
       }
 
       if (options.sender.isLoggedOut()) {
-        options.logger.error({ error, attempt }, 'daily quote aborted; WhatsApp session logged out');
+        options.logger.error({ error, attempt }, 'daily Gita message aborted; WhatsApp session logged out');
         throw error;
       }
 
@@ -165,7 +155,7 @@ async function runScheduledDailyQuote(options: {
         throw error;
       }
 
-      options.logger.warn({ error, attempt, retryInMs: retryDelayMs }, 'daily quote attempt failed; retrying');
+      options.logger.warn({ error, attempt, retryInMs: retryDelayMs }, 'daily Gita message attempt failed; retrying');
       await sleep(retryDelayMs);
     }
   }
@@ -207,58 +197,33 @@ async function sendNow(options: {
   await options.sender.connect();
 
   const state = await options.stateStore.load();
-  const result = await runDailyQuote({
+  const result = await runDailyGita({
     sender: options.sender,
     state,
     groupJid,
     now: new Date(),
     timeZone: options.config.timeZone,
-    selectQuote: (currentState) =>
-      selectQuote({
-        config: options.config,
-        state: currentState,
-        logger: options.logger
-      }),
-    renderMessage: (quote) => renderMessageWithAiReflection(quote, options.config, options.logger),
+    config: options.config,
     force: true
   });
 
   if (result.status === 'sent') {
     await options.stateStore.save(result.nextState);
-    options.logger.info({ dateKey: result.dateKey, quoteId: result.quoteId, messageId: result.messageId }, 'quote sent');
+    options.logger.info({ dateKey: result.dateKey, verseId: result.verseId, messageId: result.messageId }, 'Gita message sent');
   }
 
   await options.sender.close();
 }
 
-async function preview(options: { config: AppConfig; logger: Logger; stateStore: StateStore }): Promise<void> {
+async function preview(options: { config: AppConfig; stateStore: StateStore }): Promise<void> {
   const state = await options.stateStore.load();
-
-  try {
-    const { quote } =
-      options.config.quoteSource === 'local'
-        ? { quote: getQuoteForPreview(state) }
-        : await selectQuote({
-            config: options.config,
-            state,
-            logger: options.logger,
-            preview: true
-          });
-    console.log(await renderMessageWithAiReflection(quote, options.config, options.logger));
-  } catch (error) {
-    if (error instanceof ScheduledAuthorUnavailableError) {
-      console.error(`Preview unavailable: ${error.message}`);
-      process.exitCode = 1;
-      return;
-    }
-
-    throw error;
-  }
-}
-
-async function renderMessageWithAiReflection(quote: Quote, config: AppConfig, logger: Logger): Promise<string> {
-  const enrichedQuote = await enrichQuoteReflection({ quote, config, logger });
-  return renderQuoteMessage(enrichedQuote);
+  const { chapter, verse } = gitaPositionFromIndex(state.gitaCursor);
+  const gitaVerse = await fetchGitaVerse(chapter, verse, {
+    baseUrl: options.config.gitaApiBaseUrl,
+    timeoutMs: options.config.gitaApiTimeoutMs,
+    hindiField: options.config.gitaHindiField
+  });
+  console.log(renderGitaMessage(gitaVerse));
 }
 
 function printHelp(): void {
@@ -269,9 +234,9 @@ Commands:
   pair-qr       Link WhatsApp by scanning a terminal QR code
   reset-auth    Remove saved WhatsApp auth so pairing starts fresh
   list-groups   Print group names and JIDs
-  preview       Print the next quote without sending
-  send-now      Send the next quote immediately
-  serve         Run the 06:00 daily scheduler
+  preview       Print the next Bhagavad Gita shloka without sending
+  send-now      Send the next Bhagavad Gita shloka immediately
+  serve         Run the daily scheduler
   help          Show this help
 `);
 }

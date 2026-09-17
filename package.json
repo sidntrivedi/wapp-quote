@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Daily uplifting Hindi quote bot for a WhatsApp group.",
+  "description": "Daily Bhagavad Gita shloka bot for a WhatsApp group.",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -13,8 +13,7 @@
     "start": "node dist/src/cli.js serve",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "validate:quotes": "tsx src/scripts/validate-quotes.ts"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.23",

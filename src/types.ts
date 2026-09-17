@@ -1,17 +1,25 @@
-export type Quote = {
+export type GitaVerse = {
+  kind: 'gita';
   id: string;
-  text: string;
-  author: string;
-  language: 'hi' | 'ur';
-  mood: 'inspirational' | 'wisdom' | 'devotional' | 'hopeful';
-  reflection: string;
-  source?: string;
+  chapter: number;
+  verse: number;
+  sanskrit: string;
+  hindiMeaning: string;
+  label: string;
+  sourceLabel?: string;
+};
+
+export type SentGitaEntry = {
+  verseId: string;
+  label: string;
+  sentAt: string;
+  messageId?: string;
 };
 
 export type BotState = {
-  rotationIndex: number;
-  usedQuoteIds: string[];
-  sentDates: Record<string, { quoteId: string; author: string; sentAt: string; messageId?: string }>;
+  /** Zero-based Bhagavad Gita sequence cursor. 0 means Chapter 1, Verse 1. */
+  gitaCursor: number;
+  sentDates: Record<string, SentGitaEntry>;
 };
 
 export type SendResult = {

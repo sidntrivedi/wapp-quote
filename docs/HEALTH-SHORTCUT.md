@@ -23,7 +23,7 @@ serve process  →  validate + store (data/health.json)
 WhatsApp group
 ```
 
-The webhook runs **inside the same `serve` process** as the daily quote, so it
+The webhook runs **inside the same `serve` process** as the daily Gita message, so it
 reuses the single live WhatsApp session. There is no second process and no
 second WhatsApp login.
 
@@ -34,8 +34,8 @@ second WhatsApp login.
 ```
 💪 Health Update
 
-👟 Steps: 9,123 / 8,000 ✅
-😴 Sleep: 7.5h / 6h ✅
+👟 Steps: 9,123 / 9,000 ✅
+😴 Sleep: 7.5h / 7h ✅
 🔥 Active Cal: 520 kcal
 🏃 Exercise: 35 min
 ⚡ Streak: 3 days
@@ -56,15 +56,15 @@ second WhatsApp login.
    HEALTH_WEBHOOK_ENABLED=true
    HEALTH_WEBHOOK_TOKEN=<long-random-string>     # e.g. openssl rand -hex 32
    HEALTH_GROUP_JID=<group jid>                  # optional; defaults to WHATSAPP_GROUP_JID
-   HEALTH_STEP_GOAL=8000                         # daily step goal (default: 8000)
-   HEALTH_SLEEP_GOAL_HOURS=6                     # daily sleep goal in hours (default: 6)
+   HEALTH_STEP_GOAL=9000                         # daily step goal (default: 9000)
+   HEALTH_SLEEP_GOAL_HOURS=7                     # daily sleep goal in hours (default: 7)
    ```
 
 2. On Fly.io, set secrets and deploy:
 
    ```bash
    fly secrets set HEALTH_WEBHOOK_TOKEN="$(openssl rand -hex 32)"
-   fly secrets set HEALTH_GROUP_JID="120363...@g.us"   # if different from the quote group
+   fly secrets set HEALTH_GROUP_JID="120363...@g.us"   # if different from the Gita group
    fly deploy
    ```
 

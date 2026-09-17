@@ -8,7 +8,7 @@ import { StateStore } from '../src/state-store.js';
 import type { WhatsAppSender } from '../src/types.js';
 
 describe('runCommand', () => {
-  const tempDir = path.join(os.tmpdir(), `wapp-quote-cmd-${process.pid}`);
+  const tempDir = path.join(os.tmpdir(), `wapp-gita-cmd-${process.pid}`);
   const logger = {
     info: vi.fn(),
     warn: vi.fn(),
@@ -19,6 +19,7 @@ describe('runCommand', () => {
   afterEach(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   function createSender(overrides: Partial<WhatsAppSender> = {}): WhatsAppSender {
@@ -32,6 +33,22 @@ describe('runCommand', () => {
       isLoggedOut: vi.fn().mockReturnValue(false),
       ...overrides
     };
+  }
+
+  function stubGitaFetch(): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            chapter: 1,
+            verse: 1,
+            slok: 'धृतराष्ट्र उवाच',
+            tej: { ht: 'धृतराष्ट्र ने पूछा।' }
+          })
+        )
+      )
+    );
   }
 
   it('prints help text', async () => {
@@ -49,22 +66,25 @@ describe('runCommand', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('send-now'));
   });
 
-  it('previews the next local quote without sending', async () => {
+  it('previews the next Gita shloka without sending', async () => {
+    stubGitaFetch();
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const stateStore = new StateStore(path.join(tempDir, 'state.json'));
 
     await runCommand({
       command: 'preview',
-      config: loadConfig({ DATA_DIR: tempDir, QUOTE_SOURCE: 'local' }),
+      config: loadConfig({ DATA_DIR: tempDir }),
       logger: logger as never,
       sender: createSender(),
       stateStore
     });
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('🌅 सुप्रभात'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('🕉️ श्रीमद्भगवद्गीता 1.1'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('📖 भावार्थ:'));
   });
 
-  it('send-now sends a quote when group jid is configured', async () => {
+  it('send-now sends a Gita shloka when group jid is configured', async () => {
+    stubGitaFetch();
     const sender = createSender();
     const stateStore = new StateStore(path.join(tempDir, 'state.json'));
 
@@ -72,7 +92,6 @@ describe('runCommand', () => {
       command: 'send-now',
       config: loadConfig({
         DATA_DIR: tempDir,
-        QUOTE_SOURCE: 'local',
         WHATSAPP_GROUP_JID: '120363361658284910@g.us'
       }),
       logger: logger as never,
@@ -85,15 +104,14 @@ describe('runCommand', () => {
     expect(sender.close).toHaveBeenCalledOnce();
 
     const state = await stateStore.load();
+    expect(state.gitaCursor).toBe(1);
     expect(Object.keys(state.sentDates)).toHaveLength(1);
   });
 
   it('list-groups prints discovered groups', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const sender = createSender({
-      listGroups: vi.fn().mockResolvedValue([
-        { subject: 'Test Group', jid: '123@g.us', participants: 5 }
-      ])
+      listGroups: vi.fn().mockResolvedValue([{ subject: 'Test Group', jid: '123@g.us', participants: 5 }])
     });
 
     await runCommand({

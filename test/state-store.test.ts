@@ -6,7 +6,7 @@ import { StateStore } from '../src/state-store.js';
 import type { BotState } from '../src/types.js';
 
 describe('StateStore', () => {
-  const tempDir = path.join(os.tmpdir(), `wapp-quote-state-${process.pid}`);
+  const tempDir = path.join(os.tmpdir(), `wapp-gita-state-${process.pid}`);
   const filePath = path.join(tempDir, 'state.json');
 
   afterEach(async () => {
@@ -17,8 +17,7 @@ describe('StateStore', () => {
     const store = new StateStore(filePath);
 
     await expect(store.load()).resolves.toEqual({
-      rotationIndex: 0,
-      usedQuoteIds: [],
+      gitaCursor: 0,
       sentDates: {}
     });
   });
@@ -28,40 +27,37 @@ describe('StateStore', () => {
     await fs.writeFile(
       filePath,
       JSON.stringify({
-        rotationIndex: 3,
-        usedQuoteIds: ['q1', 42, 'q2'],
-        sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
+        gitaCursor: 3,
+        sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
       }),
       'utf8'
     );
 
     const store = new StateStore(filePath);
     await expect(store.load()).resolves.toEqual({
-      rotationIndex: 3,
-      usedQuoteIds: ['q1', 'q2'],
-      sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
+      gitaCursor: 3,
+      sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
     });
   });
 
-  it('falls back to defaults for invalid rotation index', async () => {
+  it('falls back to defaults for invalid cursor', async () => {
     await fs.mkdir(tempDir, { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify({ rotationIndex: 'bad' }), 'utf8');
+    await fs.writeFile(filePath, JSON.stringify({ gitaCursor: 'bad' }), 'utf8');
 
     const store = new StateStore(filePath);
-    await expect(store.load()).resolves.toMatchObject({ rotationIndex: 0 });
+    await expect(store.load()).resolves.toMatchObject({ gitaCursor: 0 });
   });
 
   it('writes atomically via a temp file', async () => {
     const store = new StateStore(filePath);
     const state: BotState = {
-      rotationIndex: 1,
-      usedQuoteIds: ['q1'],
-      sentDates: { '2026-06-16': { quoteId: 'q1', author: '', sentAt: '2026-06-16T00:00:00.000Z' } }
+      gitaCursor: 1,
+      sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
     };
 
     await store.save(state);
 
-    expect(await fs.readFile(filePath, 'utf8')).toContain('"rotationIndex": 1');
+    expect(await fs.readFile(filePath, 'utf8')).toContain('"gitaCursor": 1');
     await expect(fs.stat(`${filePath}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 

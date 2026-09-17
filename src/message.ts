@@ -1,13 +1,13 @@
-import type { Quote } from './types.js';
+import type { GitaVerse } from './types.js';
 
-export function renderQuoteMessage(quote: Quote): string {
+export function renderGitaMessage(verse: GitaVerse): string {
   return [
     '🌅 सुप्रभात',
     '',
-    '✨ आज की पंक्ति',
-    `“${quote.text}”`,
-    `— ${quote.author}`,
+    `🕉️ श्रीमद्भगवद्गीता ${verse.chapter}.${verse.verse}`,
+    verse.sanskrit,
     '',
-    `🌿 आज की दिशा: ${quote.reflection}`
+    '📖 भावार्थ:',
+    verse.hindiMeaning
   ].join('\n');
 }

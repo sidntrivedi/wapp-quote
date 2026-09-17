@@ -1,21 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { renderQuoteMessage } from '../src/message.js';
-import type { Quote } from '../src/types.js';
+import { renderGitaMessage } from '../src/message.js';
 
-describe('renderQuoteMessage', () => {
-  it('renders the quote, author, and reflection', () => {
-    const quote: Quote = {
-      id: 'q1',
-      text: 'धीरे-धीरे रे मना',
-      author: 'कबीर',
-      language: 'hi',
-      mood: 'hopeful',
-      reflection: 'धैर्य रखिए।'
-    };
+describe('renderGitaMessage', () => {
+  it('renders a Gita shloka and Hindi meaning only', () => {
+    const message = renderGitaMessage({
+      kind: 'gita',
+      id: 'gita-01-001',
+      label: 'भगवद्गीता 1.1',
+      chapter: 1,
+      verse: 1,
+      sanskrit: 'धृतराष्ट्र उवाच',
+      hindiMeaning: 'धृतराष्ट्र ने पूछा।'
+    });
 
-    expect(renderQuoteMessage(quote)).toContain('🌅 सुप्रभात');
-    expect(renderQuoteMessage(quote)).toContain('“धीरे-धीरे रे मना”');
-    expect(renderQuoteMessage(quote)).toContain('— कबीर');
-    expect(renderQuoteMessage(quote)).toContain('🌿 आज की दिशा: धैर्य रखिए।');
+    expect(message).toContain('🌅 सुप्रभात');
+    expect(message).toContain('🕉️ श्रीमद्भगवद्गीता 1.1');
+    expect(message).toContain('धृतराष्ट्र उवाच');
+    expect(message).toContain('📖 भावार्थ:');
+    expect(message).toContain('धृतराष्ट्र ने पूछा।');
+    expect(message).not.toContain('आज की दिशा');
   });
 });

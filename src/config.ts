@@ -2,7 +2,6 @@ import path from 'node:path';
 import process from 'node:process';
 import dotenv from 'dotenv';
 import { z } from 'zod';
-import { approvedWikiquotePages } from './approved-authors.js';
 
 dotenv.config();
 
@@ -12,13 +11,10 @@ const booleanEnv = z
 
 const envSchema = z.object({
   WHATSAPP_GROUP_JID: z.string().trim().optional(),
-  QUOTE_SOURCE: z.enum(['wikiquote', 'local']).default('wikiquote'),
-  WIKIQUOTE_LANGUAGE: z.enum(['hi', 'ur']).default('hi'),
-  WIKIQUOTE_MODE: z.enum(['authors', 'any', 'pages']).default('pages'),
-  WIKIQUOTE_CATEGORIES: z.string().trim().optional(),
-  WIKIQUOTE_PAGES: z.string().trim().optional(),
-  WIKIQUOTE_RANDOM_PAGE_LIMIT: z.coerce.number().int().min(1).max(50).default(30),
-  QUOTE_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default('06:00'),
+  GITA_API_BASE_URL: z.string().url().default('https://vedicscriptures.github.io'),
+  GITA_API_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
+  GITA_HINDI_FIELD: z.string().trim().min(1).default('tej.ht'),
+  GITA_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default('06:00'),
   TZ: z.string().trim().min(1).default('Asia/Kolkata'),
   AUTH_METHOD: z.enum(['pairing', 'qr']).default('pairing'),
   PAIRING_PHONE_NUMBER: z.string().regex(/^\d+$/).optional(),
@@ -27,31 +23,22 @@ const envSchema = z.object({
   STATE_FILE: z.string().trim().min(1).optional(),
   RESET_AUTH_ON_START: booleanEnv.default('false'),
   RESET_AUTH_TOKEN: z.string().trim().optional(),
-  AI_PROVIDER: z.enum(['none', 'ollama-cloud', 'openai']).default('none'),
-  OLLAMA_BASE_URL: z.string().url().default('https://ollama.com/api'),
-  OLLAMA_MODEL: z.string().trim().min(1).default('gpt-oss:120b'),
-  OPENAI_MODEL: z.string().trim().min(1).default('gpt-4o-mini'),
-  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
-  AI_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent']).default('info'),
-  QUOTE_CATCH_UP: booleanEnv.default('true'),
+  GITA_CATCH_UP: booleanEnv.default('true'),
   HEALTH_WEBHOOK_ENABLED: booleanEnv.default('false'),
   HEALTH_WEBHOOK_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
   HEALTH_WEBHOOK_TOKEN: z.string().trim().optional(),
   HEALTH_GROUP_JID: z.string().trim().optional(),
-  HEALTH_STEP_GOAL: z.coerce.number().int().min(0).max(1000000).default(8000),
-  HEALTH_SLEEP_GOAL_HOURS: z.coerce.number().min(0).max(24).default(6)
+  HEALTH_STEP_GOAL: z.coerce.number().int().min(0).max(1000000).default(9000),
+  HEALTH_SLEEP_GOAL_HOURS: z.coerce.number().min(0).max(24).default(7)
 });
 
 export type AppConfig = {
   groupJid?: string;
-  quoteSource: 'wikiquote' | 'local';
-  wikiquoteLanguage: 'hi' | 'ur';
-  wikiquoteMode: 'authors' | 'any' | 'pages';
-  wikiquoteCategories: string[];
-  wikiquotePages: Array<{ page: string; author: string }>;
-  wikiquoteRandomPageLimit: number;
-  quoteTime: string;
+  gitaApiBaseUrl: string;
+  gitaApiTimeoutMs: number;
+  gitaHindiField: string;
+  gitaTime: string;
   timeZone: string;
   authMethod: 'pairing' | 'qr';
   pairingPhoneNumber?: string;
@@ -60,14 +47,8 @@ export type AppConfig = {
   stateFile: string;
   resetAuthOnStart: boolean;
   resetAuthToken?: string;
-  aiProvider: 'none' | 'ollama-cloud' | 'openai';
-  ollamaBaseUrl: string;
-  ollamaModel: string;
-  openaiModel: string;
-  aiTimeoutMs: number;
-  aiTemperature: number;
   logLevel: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent';
-  quoteCatchUp: boolean;
+  gitaCatchUp: boolean;
   healthWebhookEnabled: boolean;
   healthWebhookPort: number;
   healthWebhookToken?: string;
@@ -83,13 +64,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 
   return {
     groupJid: parsed.WHATSAPP_GROUP_JID,
-    quoteSource: parsed.QUOTE_SOURCE,
-    wikiquoteLanguage: parsed.WIKIQUOTE_LANGUAGE,
-    wikiquoteMode: parsed.WIKIQUOTE_MODE,
-    wikiquoteCategories: parseWikiquoteCategories(parsed.WIKIQUOTE_CATEGORIES),
-    wikiquotePages: parseWikiquotePages(parsed.WIKIQUOTE_PAGES),
-    wikiquoteRandomPageLimit: parsed.WIKIQUOTE_RANDOM_PAGE_LIMIT,
-    quoteTime: parsed.QUOTE_TIME,
+    gitaApiBaseUrl: parsed.GITA_API_BASE_URL.replace(/\/$/, ''),
+    gitaApiTimeoutMs: parsed.GITA_API_TIMEOUT_MS,
+    gitaHindiField: parsed.GITA_HINDI_FIELD,
+    gitaTime: parsed.GITA_TIME,
     timeZone: parsed.TZ,
     authMethod: parsed.AUTH_METHOD,
     pairingPhoneNumber: parsed.PAIRING_PHONE_NUMBER,
@@ -98,14 +76,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     stateFile: path.resolve(parsed.STATE_FILE ?? path.join(dataDir, 'state.json')),
     resetAuthOnStart: parsed.RESET_AUTH_ON_START,
     resetAuthToken: parsed.RESET_AUTH_TOKEN,
-    aiProvider: parsed.AI_PROVIDER,
-    ollamaBaseUrl: parsed.OLLAMA_BASE_URL.replace(/\/$/, ''),
-    ollamaModel: parsed.OLLAMA_MODEL,
-    openaiModel: parsed.OPENAI_MODEL,
-    aiTimeoutMs: parsed.AI_TIMEOUT_MS,
-    aiTemperature: parsed.AI_TEMPERATURE,
     logLevel: parsed.LOG_LEVEL,
-    quoteCatchUp: parsed.QUOTE_CATCH_UP,
+    gitaCatchUp: parsed.GITA_CATCH_UP,
     healthWebhookEnabled: parsed.HEALTH_WEBHOOK_ENABLED,
     healthWebhookPort: parsed.HEALTH_WEBHOOK_PORT,
     healthWebhookToken: parsed.HEALTH_WEBHOOK_TOKEN,
@@ -125,35 +97,6 @@ function parseGroupJids(value: string | undefined): string[] {
     .split(',')
     .map((jid) => jid.trim())
     .filter(Boolean);
-}
-
-function parseWikiquoteCategories(value: string | undefined): string[] {
-  if (!value) {
-    return ['लेखक', 'दार्शनिक', 'भारत के कवि'];
-  }
-
-  return value
-    .split(',')
-    .map((category) => category.trim().replace(/^श्रेणी:/, ''))
-    .filter(Boolean);
-}
-
-function parseWikiquotePages(value: string | undefined): Array<{ page: string; author: string }> {
-  if (!value) {
-    return approvedWikiquotePages;
-  }
-
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .map((entry) => {
-      const [page, author = page] = entry.split('|').map((part) => part.trim());
-      if (!page) {
-        throw new Error(`Invalid WIKIQUOTE_PAGES entry: ${entry}`);
-      }
-      return { page, author };
-    });
 }
 
 export function requireGroupJid(config: AppConfig): string {
@@ -180,11 +123,6 @@ export function validateHealthEnvironment(config: AppConfig): void {
   requireHealthGroupJids(config);
 }
 
-/**
- * Resolve the list of group JIDs health reports should be posted to.
- * `HEALTH_GROUP_JID` accepts a comma-separated list (e.g. two family groups);
- * falls back to the single `WHATSAPP_GROUP_JID` when unset.
- */
 export function requireHealthGroupJids(config: AppConfig): string[] {
   const groupJids = config.healthGroupJids.length > 0 ? config.healthGroupJids : config.groupJid ? [config.groupJid] : [];
 

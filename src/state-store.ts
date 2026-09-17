@@ -3,8 +3,7 @@ import path from 'node:path';
 import type { BotState } from './types.js';
 
 const defaultState: BotState = {
-  rotationIndex: 0,
-  usedQuoteIds: [],
+  gitaCursor: 0,
   sentDates: {}
 };
 
@@ -17,8 +16,7 @@ export class StateStore {
       const parsed = JSON.parse(raw) as Partial<BotState>;
 
       return {
-        rotationIndex: typeof parsed.rotationIndex === 'number' && Number.isInteger(parsed.rotationIndex) ? parsed.rotationIndex : 0,
-        usedQuoteIds: Array.isArray(parsed.usedQuoteIds) ? parsed.usedQuoteIds.filter((id): id is string => typeof id === 'string') : [],
+        gitaCursor: normalizeGitaCursor(parsed.gitaCursor),
         sentDates: normalizeSentDates(parsed.sentDates)
       };
     } catch (error) {
@@ -38,19 +36,27 @@ export class StateStore {
   }
 }
 
+function normalizeGitaCursor(cursor: unknown): number {
+  if (typeof cursor === 'number' && Number.isInteger(cursor) && cursor >= 0) {
+    return cursor;
+  }
+
+  return 0;
+}
+
 function normalizeSentDates(
   sentDates: Record<string, Partial<BotState['sentDates'][string]>> | undefined
 ): BotState['sentDates'] {
   const normalized: BotState['sentDates'] = {};
 
   for (const [dateKey, entry] of Object.entries(sentDates ?? {})) {
-    if (!entry?.quoteId || !entry.sentAt) {
+    if (!entry?.verseId || !entry.sentAt) {
       continue;
     }
 
     normalized[dateKey] = {
-      quoteId: entry.quoteId,
-      author: typeof entry.author === 'string' ? entry.author : '',
+      verseId: entry.verseId,
+      label: typeof entry.label === 'string' ? entry.label : '',
       sentAt: entry.sentAt,
       ...(entry.messageId ? { messageId: entry.messageId } : {})
     };

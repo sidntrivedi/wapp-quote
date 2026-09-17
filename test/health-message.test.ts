@@ -3,8 +3,8 @@ import { renderHealthMessage, type HealthInsights } from '../src/health-message.
 import type { HealthEntry } from '../src/health-types.js';
 
 const baseInsights: HealthInsights = {
-  stepGoal: 8000,
-  sleepGoalHours: 6,
+  stepGoal: 9000,
+  sleepGoalHours: 7,
   metStepGoal: true,
   metSleepGoal: true,
   streakDays: 1
@@ -24,8 +24,8 @@ describe('renderHealthMessage', () => {
     const message = renderHealthMessage({ entry, insights: baseInsights });
 
     expect(message).toContain('💪 Health Update');
-    expect(message).toContain('👟 Steps: 9,123 / 8,000 ✅');
-    expect(message).toContain('😴 Sleep: 7.5h / 6h ✅');
+    expect(message).toContain('👟 Steps: 9,123 / 9,000 ✅');
+    expect(message).toContain('😴 Sleep: 7.5h / 7h ✅');
     expect(message).toContain('🔥 Active Cal: 520 kcal');
     expect(message).toContain('🏃 Exercise: 35 min');
   });
@@ -40,13 +40,13 @@ describe('renderHealthMessage', () => {
   it('marks steps as failed when goal not met', () => {
     const entry: HealthEntry = { date: '2026-06-21', steps: 5000, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: { ...baseInsights, metStepGoal: false } });
-    expect(message).toContain('👟 Steps: 5,000 / 8,000 ❌');
+    expect(message).toContain('👟 Steps: 5,000 / 9,000 ❌');
   });
 
   it('marks sleep as failed when goal not met', () => {
     const entry: HealthEntry = { date: '2026-06-21', sleepHours: 5, receivedAt: 'x' };
     const message = renderHealthMessage({ entry, insights: { ...baseInsights, metSleepGoal: false } });
-    expect(message).toContain('😴 Sleep: 5h / 6h ❌');
+    expect(message).toContain('😴 Sleep: 5h / 7h ❌');
   });
 
   it('shows the streak when 2 or more days', () => {
@@ -68,8 +68,8 @@ describe('renderHealthMessage', () => {
     // Only header + data lines, nothing else
     expect(lines).toEqual([
       '💪 Health Update',
-      '👟 Steps: 9,000 / 8,000 ✅',
-      '😴 Sleep: 7h / 6h ✅',
+      '👟 Steps: 9,000 / 9,000 ✅',
+      '😴 Sleep: 7h / 7h ✅',
     ]);
   });
 });

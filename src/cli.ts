@@ -6,7 +6,6 @@ import { loadConfig, validateHealthEnvironment } from './config.js';
 import { createLogger } from './logger.js';
 import { StateStore } from './state-store.js';
 import { BaileysWhatsAppSender } from './whatsapp.js';
-import { validateAiEnvironment } from './ai-reflection.js';
 
 const knownCommands = new Set<Command>(['serve', 'pair', 'pair-qr', 'reset-auth', 'list-groups', 'send-now', 'preview', 'help']);
 
@@ -14,7 +13,6 @@ async function main(): Promise<Command> {
   const config = loadConfig();
   const command = parseCommand(process.argv[2]);
   const effectiveConfig = command === 'pair-qr' ? { ...config, authMethod: 'qr' as const } : config;
-  validateAiEnvironment(effectiveConfig);
   validateHealthEnvironment(effectiveConfig);
   const logger = createLogger(effectiveConfig);
   const sender = new BaileysWhatsAppSender(effectiveConfig, logger);

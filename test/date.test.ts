@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  cronExpressionForTime,
-  getCatchUpEligibility,
-  isPastQuoteTime,
-  localDateKey
-} from '../src/date.js';
+import { cronExpressionForTime, getCatchUpEligibility, isPastScheduleTime, localDateKey } from '../src/date.js';
 
 describe('date helpers', () => {
   it('formats local date keys in the configured timezone', () => {
@@ -16,20 +11,20 @@ describe('date helpers', () => {
     expect(cronExpressionForTime('21:30')).toBe('30 21 * * *');
   });
 
-  it('detects when the configured quote time has passed today', () => {
+  it('detects when the configured schedule time has passed today', () => {
     const before = new Date('2026-06-21T00:29:00.000Z');
     const after = new Date('2026-06-21T00:31:00.000Z');
 
-    expect(isPastQuoteTime(before, '06:00', 'Asia/Kolkata')).toBe(false);
-    expect(isPastQuoteTime(after, '06:00', 'Asia/Kolkata')).toBe(true);
+    expect(isPastScheduleTime(before, '06:00', 'Asia/Kolkata')).toBe(false);
+    expect(isPastScheduleTime(after, '06:00', 'Asia/Kolkata')).toBe(true);
   });
 
-  it('allows catch-up only within four hours after quote time', () => {
-    const atQuoteTime = new Date('2026-06-21T00:30:00.000Z');
+  it('allows catch-up only within four hours after schedule time', () => {
+    const atScheduleTime = new Date('2026-06-21T00:30:00.000Z');
     const beforeDeadline = new Date('2026-06-21T04:30:00.000Z');
     const afterDeadline = new Date('2026-06-21T04:31:00.000Z');
 
-    expect(getCatchUpEligibility(atQuoteTime, '06:00', 'Asia/Kolkata')).toMatchObject({
+    expect(getCatchUpEligibility(atScheduleTime, '06:00', 'Asia/Kolkata')).toMatchObject({
       eligible: true,
       reason: 'within-window',
       catchUpDeadline: '10:00'
@@ -44,13 +39,13 @@ describe('date helpers', () => {
     });
   });
 
-  it('reports before-quote-time when the window has not opened', () => {
-    const beforeQuoteTime = new Date('2026-06-21T00:29:00.000Z');
+  it('reports before-schedule-time when the window has not opened', () => {
+    const beforeScheduleTime = new Date('2026-06-21T00:29:00.000Z');
 
-    expect(getCatchUpEligibility(beforeQuoteTime, '06:00', 'Asia/Kolkata')).toMatchObject({
+    expect(getCatchUpEligibility(beforeScheduleTime, '06:00', 'Asia/Kolkata')).toMatchObject({
       eligible: false,
-      reason: 'before-quote-time',
-      minutesPastQuoteTime: -1
+      reason: 'before-schedule-time',
+      minutesPastScheduleTime: -1
     });
   });
 

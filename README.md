@@ -1,30 +1,44 @@
 # wapp-quote
 
-A daily Hindi quote bot for WhatsApp groups. Posts one uplifting message per day at a scheduled time, sourced from Hindi Wikiquote with a local fallback.
+A daily WhatsApp bot that sends the next sequential Bhagavad Gita shloka with Hindi भावार्थ to a group.
 
-Built with [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web protocol). Intended for small, consenting groups — one message per day, no bulk messaging.
+Built with [Baileys](https://github.com/WhiskeySockets/Baileys). Intended for small, consenting groups — one message per day, no bulk messaging.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — system design, module map, runtime flows, and agent onboarding
-- [Health webhook setup](docs/HEALTH-SHORTCUT.md) — Apple Shortcuts → daily health report on WhatsApp
+- [Architecture](docs/ARCHITECTURE.md)
+- [Health webhook setup](docs/HEALTH-SHORTCUT.md) — optional Apple Shortcuts → daily health report on WhatsApp
 
 ## Features
 
-- **Daily scheduling** — in-process cron (`node-cron`), default 06:00 IST
-- **Wikiquote sourcing** — approved author list, deduplication, round-robin rotation
-- **Local fallback** — curated `quotes.json` when Wikiquote is unavailable
-- **AI reflections** — optional Ollama Cloud for the daily reflection line (quote text unchanged)
-- **Idempotent sends** — tracks sent dates in `data/state.json`; restarts never duplicate
-- **Health webhook (optional)** — Apple Shortcuts posts daily Health stats (steps, sleep, workouts) to a webhook; the bot stores them and posts a Hindi health report with streaks and a 7-day average. See [docs/HEALTH-SHORTCUT.md](docs/HEALTH-SHORTCUT.md)
-- **Fly.io ready** — always-on machine with persistent volume for auth and state
+- **Bhagavad Gita sequence** — Chapter 1.1 → 18.78, then wraps to 1.1
+- **API-only content** — fetches `/slok/{chapter}/{verse}/` at send time
+- **Clean Hindi message** — Sanskrit shloka + Hindi meaning only
+- **Idempotent daily sends** — `data/state.json` prevents duplicates and stores the Gita cursor
+- **Retries and catch-up** — retries transient failures, then skips after the catch-up window
+- **Optional health webhook** — stores Apple Health payloads and posts a Hindi daily report
+
+## Message format
+
+```text
+🌅 सुप्रभात
+
+🕉️ श्रीमद्भगवद्गीता 1.1
+धृतराष्ट्र उवाच ...
+
+📖 भावार्थ:
+धृतराष्ट्र ने पूछा ...
+```
 
 ## How it works
 
 1. Links to WhatsApp as a paired device and stays connected.
-2. At the configured time, fetches a quote (Wikiquote → local fallback).
-3. Optionally enriches the reflection via Ollama Cloud.
-4. Sends to the target group JID and records the send in state.
+2. At `GITA_TIME`, reads `gitaCursor` from `data/state.json`.
+3. Fetches the corresponding Gita verse from the configured API.
+4. Validates requested chapter/verse, Sanskrit text, and Hindi Devanagari meaning.
+5. Sends the message and saves the advanced cursor only after WhatsApp accepts it.
+
+If the API response is invalid or unavailable, the attempt fails/skips. The bot does not send fallback content.
 
 ## Requirements
 
@@ -41,19 +55,19 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` with your phone number and schedule:
+Edit `.env`:
 
 ```bash
 AUTH_METHOD=pairing
 PAIRING_PHONE_NUMBER=91XXXXXXXXXX
-QUOTE_TIME=06:00
+GITA_TIME=06:00
 TZ=Asia/Kolkata
 ```
 
 Pair, find your group, and configure the target:
 
 ```bash
-npm run dev -- pair              # link WhatsApp (clears stale session first)
+npm run dev -- pair
 npm run dev -- list-groups       # copy the JID ending in @g.us
 # set WHATSAPP_GROUP_JID in .env
 npm run dev -- preview           # dry run
@@ -61,20 +75,13 @@ npm run dev -- send-now          # send immediately
 npm run dev -- serve             # start daily scheduler
 ```
 
-**Pairing alternatives**
-
-| Command | Use when |
-|---------|----------|
-| `pair-qr` | Phone-number pairing is rejected |
-| `reset-auth` | You need a clean session before re-pairing |
-
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `serve` | Run the daily scheduler (production mode) |
-| `send-now` | Send a quote immediately (forces send, even if already sent today) |
-| `preview` | Print the next quote without sending |
+| `serve` | Run the daily scheduler |
+| `send-now` | Send the next Gita shloka immediately |
+| `preview` | Print the next Gita shloka without sending |
 | `list-groups` | List group names and JIDs |
 | `pair` | Link WhatsApp via pairing code |
 | `pair-qr` | Link WhatsApp via QR code |
@@ -83,126 +90,52 @@ npm run dev -- serve             # start daily scheduler
 
 ## Configuration
 
-See `.env.example` for the full list. Key variables:
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WHATSAPP_GROUP_JID` | — | Target group (ends with `@g.us`) |
-| `QUOTE_TIME` | `06:00` | Send time, 24-hour local format |
+| `WHATSAPP_GROUP_JID` | — | Target group, ending with `@g.us` |
+| `GITA_API_BASE_URL` | `https://vedicscriptures.github.io` | VedicScriptures-compatible base URL |
+| `GITA_API_TIMEOUT_MS` | `10000` | API timeout in milliseconds |
+| `GITA_HINDI_FIELD` | `tej.ht` | Preferred Hindi meaning field; falls back to first valid Hindi field |
+| `GITA_TIME` | `06:00` | Daily send time, 24-hour local format |
+| `GITA_CATCH_UP` | `true` | Poll for missed sends within the catch-up window |
 | `TZ` | `Asia/Kolkata` | Timezone for schedule and date tracking |
-| `QUOTE_SOURCE` | `wikiquote` | `wikiquote` or `local` |
-| `WIKIQUOTE_LANGUAGE` | `hi` | Hindi Wikiquote (`hi.wikiquote.org`) |
-| `WIKIQUOTE_MODE` | `pages` | `pages`, `authors`, or `any` |
-| `AI_PROVIDER` | `none` | `none`, `openai`, or `ollama-cloud` |
-| `OPENAI_API_KEY` | — | Required when `AI_PROVIDER=openai` |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI chat model |
-| `OLLAMA_API_KEY` | — | Required when `AI_PROVIDER=ollama-cloud` |
-| `HEALTH_WEBHOOK_ENABLED` | `false` | Enable the Apple Shortcuts health webhook |
-| `HEALTH_WEBHOOK_PORT` | `8080` | Port the webhook listens on |
-| `HEALTH_WEBHOOK_TOKEN` | — | Bearer secret; required when the webhook is enabled |
-| `HEALTH_GROUP_JID` | — | Group(s) for health reports, comma-separated for more than one (falls back to `WHATSAPP_GROUP_JID`) |
-| `HEALTH_STEP_GOAL` | `8000` | Daily steps goal for the ✅ mark and streaks |
-
-**Wikiquote modes**
-
-- `pages` — built-in approved author list (recommended)
-- `authors` — random author from Wikiquote categories
-- `any` — random page (less reliable attribution)
-
-Override the author list with `WIKIQUOTE_PAGES=page\|author,page\|author`.
-
-**AI reflection**
-
-When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, the bot calls the configured provider to generate the reflection line (`आज की दिशा`). The quote and author are never modified. On failure or validation error, the built-in fallback is used.
-
-Recommended for OpenAI: `AI_PROVIDER=openai` with `OPENAI_MODEL=gpt-4o-mini` (~1 call/day, very low cost).
+| `AUTH_METHOD` | `pairing` | `pairing` or `qr` |
+| `PAIRING_PHONE_NUMBER` | — | Required for pairing auth; digits only with country code |
+| `DATA_DIR` | `./data` | Runtime data directory |
+| `LOG_LEVEL` | `info` | Pino log level |
+| `HEALTH_WEBHOOK_ENABLED` | `false` | Enable the optional health webhook |
+| `HEALTH_WEBHOOK_TOKEN` | — | Required when health webhook is enabled |
+| `HEALTH_GROUP_JID` | — | Health report group(s), comma-separated; defaults to `WHATSAPP_GROUP_JID` |
 
 ## Health webhook (optional)
 
-When `HEALTH_WEBHOOK_ENABLED=true`, the `serve` process also runs an HTTP server
-that accepts a daily health payload from an Apple Shortcut and posts a Hindi
-health report to your group. It reuses the same WhatsApp session — no second
-process or login.
-
-```bash
-HEALTH_WEBHOOK_ENABLED=true
-HEALTH_WEBHOOK_TOKEN=$(openssl rand -hex 32)
-HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us   # optional; defaults to WHATSAPP_GROUP_JID
-# comma-separate to post to more than one group:
-# HEALTH_GROUP_JID=120363aaa...@g.us,120363bbb...@g.us
-HEALTH_STEP_GOAL=8000
-```
-
-Endpoints:
-
-- `GET /healthz` — liveness probe
-- `POST /health` — ingest payload; auth via `Authorization: Bearer <token>` or `x-webhook-token`
-
-```bash
-curl -X POST "https://<app>.fly.dev/health" \
-  -H "Authorization: Bearer $HEALTH_WEBHOOK_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{"steps":9123,"sleepSeconds":27000,"exerciseMinutes":35}'
-```
-
-The report is posted once per day (use `?force=true` to re-post). Full setup,
-payload reference, and the Apple Shortcut walkthrough are in
-[docs/HEALTH-SHORTCUT.md](docs/HEALTH-SHORTCUT.md).
+When `HEALTH_WEBHOOK_ENABLED=true`, the `serve` process also runs an HTTP server that accepts a daily health payload from an Apple Shortcut and posts a Hindi health report. See [docs/HEALTH-SHORTCUT.md](docs/HEALTH-SHORTCUT.md).
 
 ## Deployment
 
-### Fly.io (recommended)
+### Fly.io
 
-One always-on machine with a persistent volume at `/app/data` for WhatsApp auth and send state.
+One always-on machine with a persistent volume at `/app/data` for WhatsApp auth and state.
 
 ```bash
 brew install flyctl && fly auth login
-```
-
-Edit `app` in `fly.toml`, then:
-
-```bash
 fly apps create <your-app-name>
 fly volumes create wapp_quote_data --size 1 --region sin --app <your-app-name>
 fly secrets set \
   PAIRING_PHONE_NUMBER=91XXXXXXXXXX \
   WHATSAPP_GROUP_JID=120363xxxxxxxxxxxxxx@g.us \
-  OPENAI_API_KEY=your_key \
   --app <your-app-name>
 fly deploy --app <your-app-name>
 ```
 
-To enable the health webhook in production, also set its secret (the `fly.toml`
-already turns the feature on and exposes HTTPS):
+Watch `fly logs` for the pairing code on first deploy. Auth is stored on the volume at `/app/data/auth`.
 
-```bash
-fly secrets set HEALTH_WEBHOOK_TOKEN="$(openssl rand -hex 32)" --app <your-app-name>
-# optional, if health reports go to a different group (or two, comma-separated):
-fly secrets set HEALTH_GROUP_JID=120363xxxxxxxxxxxxxx@g.us --app <your-app-name>
-# fly secrets set HEALTH_GROUP_JID=120363aaa...@g.us,120363bbb...@g.us --app <your-app-name>
-```
-
-On first deploy, watch `fly logs` for the pairing code. Auth is stored on the volume at `/app/data/auth`.
-
-**Operations**
-
-```bash
-fly status --app <your-app-name>
-fly logs --app <your-app-name>
-fly ssh console -C "node dist/src/cli.js send-now" --app <your-app-name>
-fly secrets set WHATSAPP_GROUP_JID=<new-jid> --app <your-app-name>   # change target group
-```
-
-There is no Fly Cron job — scheduling runs in-process via `node-cron` inside the `serve` process.
-
-### Docker Compose (VPS)
+### Docker Compose
 
 ```bash
 docker compose up -d --build
 docker compose logs -f
 ```
-
-The `./data` directory holds WhatsApp auth and send state. Back it up before migrating servers.
 
 ### Without Docker
 
@@ -216,26 +149,18 @@ npm start
 | Path | Purpose |
 |------|---------|
 | `data/auth/` | WhatsApp session credentials |
-| `data/state.json` | Sent dates and used quote IDs |
-| `data/health.json` | Daily health entries and posted markers (when webhook enabled) |
+| `data/state.json` | Gita cursor and sent dates |
+| `data/health.json` | Daily health entries and posted markers, when webhook enabled |
 
-- Restarts do not resend today's quote.
-- Failed sends retry up to 3 times; state is updated only after WhatsApp accepts the message.
-- Never commit `.env` or `data/` — both are in `.gitignore`.
-
-## Resilience
-
-- **Scheduled send retries** — at 6:00 AM, retries up to 3 times (5 minutes apart) before giving up.
-- **Missed-cron catch-up** — if `node-cron` misses the 06:00 slot (timer drift / CPU scheduling), the bot retries on `execution:missed` and polls every 15 minutes until today's quote is sent, but only within 4 hours of `QUOTE_TIME` (until 10:00 IST by default). After that it logs once and skips today.
-- **Session conflict recovery** — reconnects automatically after temporary WhatsApp session conflicts.
-- **Serve lock** — `send-now` and `list-groups` refuse to run while `serve` is active, so SSH tests do not steal the live session.
-- **After re-pairing** — run `fly machine restart` so `serve` loads the new auth session.
+- Restarts do not resend today's Gita message.
+- Cursor advances only after WhatsApp accepts the message and state is saved.
+- Failed sends retry up to 3 times.
+- Never commit `.env` or `data/`.
 
 ## Development
 
 ```bash
 npm test
 npm run typecheck
-npm run validate:quotes
 npm run build
 ```

@@ -13,21 +13,17 @@ swap_size_mb = 256
 [env]
   AUTH_METHOD = "qr"
   RESET_AUTH_ON_START = "false"
-  QUOTE_SOURCE = "wikiquote"
-  WIKIQUOTE_LANGUAGE = "hi"
-  WIKIQUOTE_MODE = "pages"
+  GITA_API_BASE_URL = "https://vedicscriptures.github.io"
+  GITA_API_TIMEOUT_MS = "10000"
+  GITA_HINDI_FIELD = "tej.ht"
+  GITA_TIME = "06:00"
+  GITA_CATCH_UP = "true"
   TZ = "Asia/Kolkata"
-  QUOTE_TIME = "06:00"
-  AI_PROVIDER = "openai"
-  OPENAI_MODEL = "gpt-4o-mini"
-  AI_TIMEOUT_MS = "10000"
-  AI_TEMPERATURE = "0.7"
   LOG_LEVEL = "info"
-  QUOTE_CATCH_UP = "true"
   HEALTH_WEBHOOK_ENABLED = "true"
   HEALTH_WEBHOOK_PORT = "8080"
-  HEALTH_STEP_GOAL = "8000"
-  HEALTH_SLEEP_GOAL_HOURS = "6"
+  HEALTH_STEP_GOAL = "9000"
+  HEALTH_SLEEP_GOAL_HOURS = "7"
 
 # HTTP service for the Apple Shortcuts health webhook. auto_stop is disabled so
 # the single long-lived WhatsApp (Baileys) session in the serve process is never

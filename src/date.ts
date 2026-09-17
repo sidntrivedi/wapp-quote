@@ -15,42 +15,42 @@ export function cronExpressionForTime(hhmm: string): string {
   return `${Number(minute)} ${Number(hour)} * * *`;
 }
 
-export function isPastQuoteTime(now: Date, quoteTime: string, timeZone: string): boolean {
-  const eligibility = getCatchUpEligibility(now, quoteTime, timeZone);
-  return eligibility.reason !== 'before-quote-time';
+export function isPastScheduleTime(now: Date, scheduleTime: string, timeZone: string): boolean {
+  const eligibility = getCatchUpEligibility(now, scheduleTime, timeZone);
+  return eligibility.reason !== 'before-schedule-time';
 }
 
 export const DEFAULT_CATCH_UP_GRACE_HOURS = 4;
 
-export type CatchUpEligibilityReason = 'before-quote-time' | 'within-window' | 'window-expired';
+export type CatchUpEligibilityReason = 'before-schedule-time' | 'within-window' | 'window-expired';
 
 export type CatchUpEligibility = {
   eligible: boolean;
   reason: CatchUpEligibilityReason;
-  minutesPastQuoteTime: number;
+  minutesPastScheduleTime: number;
   catchUpDeadline: string;
 };
 
 export function getCatchUpEligibility(
   now: Date,
-  quoteTime: string,
+  scheduleTime: string,
   timeZone: string,
   graceHours: number = DEFAULT_CATCH_UP_GRACE_HOURS
 ): CatchUpEligibility {
-  const [quoteHour, quoteMinute] = quoteTime.split(':').map(Number);
+  const [scheduleHour, scheduleMinute] = scheduleTime.split(':').map(Number);
   const { hour, minute } = localHourMinute(now, timeZone);
-  const minutesPastQuoteTime = (hour - quoteHour) * 60 + (minute - quoteMinute);
-  const catchUpDeadline = formatLocalTime(quoteHour + graceHours, quoteMinute);
+  const minutesPastScheduleTime = (hour - scheduleHour) * 60 + (minute - scheduleMinute);
+  const catchUpDeadline = formatLocalTime(scheduleHour + graceHours, scheduleMinute);
 
-  if (minutesPastQuoteTime < 0) {
-    return { eligible: false, reason: 'before-quote-time', minutesPastQuoteTime, catchUpDeadline };
+  if (minutesPastScheduleTime < 0) {
+    return { eligible: false, reason: 'before-schedule-time', minutesPastScheduleTime, catchUpDeadline };
   }
 
-  if (minutesPastQuoteTime > graceHours * 60) {
-    return { eligible: false, reason: 'window-expired', minutesPastQuoteTime, catchUpDeadline };
+  if (minutesPastScheduleTime > graceHours * 60) {
+    return { eligible: false, reason: 'window-expired', minutesPastScheduleTime, catchUpDeadline };
   }
 
-  return { eligible: true, reason: 'within-window', minutesPastQuoteTime, catchUpDeadline };
+  return { eligible: true, reason: 'within-window', minutesPastScheduleTime, catchUpDeadline };
 }
 
 function formatLocalTime(hour: number, minute: number): string {

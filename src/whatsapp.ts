@@ -68,7 +68,7 @@ export class BaileysWhatsAppSender implements WhatsAppSender {
     const socket = makeWASocket({
       version,
       printQRInTerminal: false,
-      browser: Browsers.macOS('Wapp Quote'),
+      browser: Browsers.macOS('Wapp Gita'),
       logger: this.logger.child({ module: 'baileys' }),
       auth: {
         creds: state.creds,

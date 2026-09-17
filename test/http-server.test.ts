@@ -14,8 +14,8 @@ const logger = {
 
 const config: HealthWebhookConfig = {
   healthWebhookToken: 'secret-token',
-  healthStepGoal: 8000,
-  healthSleepGoalHours: 6,
+  healthStepGoal: 9000,
+  healthSleepGoalHours: 7,
   timeZone: 'Asia/Kolkata'
 };
 
@@ -75,8 +75,8 @@ describe('processHealthWebhook', () => {
     expect(result.body.results).toEqual([{ jid: groupJid, messageId: 'msg-1' }]);
     expect(sender.sendText).toHaveBeenCalledOnce();
     expect(sender.sendText.mock.calls[0][0]).toBe(groupJid);
-    expect(sender.sendText.mock.calls[0][1]).toContain('👟 Steps: 9,000 / 8,000');
-    expect(sender.sendText.mock.calls[0][1]).toContain('😴 Sleep: 7.5h / 6h ✅');
+    expect(sender.sendText.mock.calls[0][1]).toContain('👟 Steps: 9,000 / 9,000');
+    expect(sender.sendText.mock.calls[0][1]).toContain('😴 Sleep: 7.5h / 7h ✅');
 
     const state = await healthStore.load();
     expect(state.entries['2026-06-21'].sleepHours).toBe(7.5);
@@ -228,7 +228,7 @@ describe('processHealthWebhook', () => {
     const sender = createSender();
     const healthStore = new HealthStore(filePath);
 
-    await processHealthWebhook({ rawBody: { date: '2026-06-20', steps: 8500 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now: new Date('2026-06-20T16:00:00Z') });
+    await processHealthWebhook({ rawBody: { date: '2026-06-20', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now: new Date('2026-06-20T16:00:00Z') });
     await processHealthWebhook({ rawBody: { date: '2026-06-21', steps: 9000 }, force: false, config, logger: logger as never, sender, healthStore, groupJids, now: new Date('2026-06-21T16:00:00Z') });
 
     const lastMessage = sender.sendText.mock.calls[1][1] as string;

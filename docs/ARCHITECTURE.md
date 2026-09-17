@@ -1,28 +1,24 @@
 # wapp-quote Architecture
 
-This document describes how the wapp-quote bot is structured. It is written for **developers and AI agents** making code changes. For setup, commands, and deployment walkthroughs, see [README.md](../README.md).
+This document is for developers and agents working on the bot. For setup and deployment, see [README.md](../README.md).
 
 ## Overview
 
-wapp-quote is a **daily Hindi uplifting quote bot** for WhatsApp groups. It posts **one message per day** at a configured local time (default 06:00 IST), sourced from Hindi Wikiquote with a local fallback bank. It uses [Baileys](https://github.com/WhiskeySockets/Baileys) (WhatsApp Web protocol) and runs as a single Node.js process.
+wapp-quote sends one Bhagavad Gita shloka with Hindi भावार्थ to a WhatsApp group each day. The Gita content is fetched from a public API at send time. There is no legacy quote bank, Wikiquote integration, or AI reflection pipeline.
 
-It also has an optional **health webhook** ([health feature](#health-webhook)): when enabled, the same `serve` process runs an HTTP server that accepts daily Apple Shortcuts Health payloads, stores them, and posts a Hindi health report to a WhatsApp group. See [HEALTH-SHORTCUT.md](./HEALTH-SHORTCUT.md) for the user-facing setup.
+The process is a single Node.js app using [Baileys](https://github.com/WhiskeySockets/Baileys). Persistence is JSON files plus Baileys auth files under `data/`.
 
-### Design constraints
+An optional health webhook can run in the same process and reuse the same WhatsApp session.
 
-These invariants are intentional. Do not break them without explicit product approval:
+## Invariants
 
 | Constraint | Where enforced | Why |
 |------------|----------------|-----|
-| Send-only — no inbound WhatsApp handling | [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Bot is a one-way broadcaster; Baileys skips decrypt for all JIDs. (The health webhook is inbound **HTTP**, not inbound WhatsApp — this invariant is preserved.) |
-| One message per calendar day | [`src/quote-runner.ts`](../src/quote-runner.ts) | `sentDates` keyed by `YYYY-MM-DD` in configured TZ |
-| State saved only after WhatsApp accepts send | [`src/commands.ts`](../src/commands.ts) `runScheduledDailyQuote` | Prevents duplicate sends on restart after partial failure |
-| Only one `serve` process at a time | [`src/serve-lock.ts`](../src/serve-lock.ts) | PID file at `data/serve.lock` |
-| Health webhook posts share the single live WhatsApp session | [`src/http-server.ts`](../src/http-server.ts) started inside `serve` | Baileys allows only one session; a separate process would conflict |
-| One health report per calendar day | [`src/http-server.ts`](../src/http-server.ts) `processHealthWebhook` | `postedAt` keyed by date in `data/health.json`; `?force=true` overrides |
-| `send-now` / `list-groups` blocked while `serve` runs | [`src/serve-lock.ts`](../src/serve-lock.ts) `assertServeNotRunning` | Prevents one-shot commands from stealing the live WhatsApp session |
-
----
+| Send-only — no inbound WhatsApp handling | [`src/inbound-jid.ts`](../src/inbound-jid.ts) | One-way broadcaster; Baileys skips decrypt for all JIDs |
+| One Gita message per calendar day | [`src/gita-runner.ts`](../src/gita-runner.ts) | `sentDates` keyed by `YYYY-MM-DD` in configured TZ |
+| Cursor advances only after send acceptance | [`src/gita-runner.ts`](../src/gita-runner.ts), [`src/commands.ts`](../src/commands.ts) | Avoids skipping verses after API/send failures |
+| Only one `serve` process at a time | [`src/serve-lock.ts`](../src/serve-lock.ts) | Protects the WhatsApp session |
+| Health webhook shares the live WhatsApp session | [`src/http-server.ts`](../src/http-server.ts) | A second process would conflict with Baileys auth |
 
 ## System context
 
@@ -32,7 +28,9 @@ graph TB
         CLI[cli.ts]
         CMD[commands.ts]
         SCH[scheduler.ts]
-        RUN[quote-runner.ts]
+        RUN[gita-runner.ts]
+        GITA[gita.ts]
+        MSG[message.ts]
         WA[whatsapp.ts]
         HTTP[http-server.ts optional]
     end
@@ -45,9 +43,7 @@ graph TB
     end
 
     subgraph external [External Services]
-        WQ[hi.wikiquote.org MediaWiki API]
-        OAI[OpenAI API optional]
-        OLL[Ollama Cloud API optional]
+        API[Bhagavad Gita API]
         WANET[WhatsApp Servers]
         SHORT[Apple Shortcuts optional]
     end
@@ -55,12 +51,12 @@ graph TB
     CLI --> CMD
     CMD --> SCH
     SCH --> RUN
+    RUN --> GITA
+    GITA --> API
+    RUN --> MSG
     RUN --> WA
     WA --> AUTH
     WA --> WANET
-    RUN --> WQ
-    RUN --> OAI
-    RUN --> OLL
     RUN --> STATE
     CMD --> LOCK
     CMD --> HTTP
@@ -69,481 +65,175 @@ graph TB
     HTTP --> WA
 ```
 
-There is **no database**, message queue, or external cron. All persistence is JSON and Baileys multi-file auth on disk. The optional health webhook ([`http-server.ts`](../src/http-server.ts)) runs inside the same `serve` process and reuses its WhatsApp session.
-
----
-
 ## Process model
 
-### Entry point
+[`src/cli.ts`](../src/cli.ts) is the entry point:
 
-[`src/cli.ts`](../src/cli.ts) is the sole entry point:
+1. `loadConfig()` parses env into `AppConfig`.
+2. `validateHealthEnvironment()` validates optional health settings.
+3. `BaileysWhatsAppSender` and `StateStore` are constructed.
+4. `runCommand()` dispatches to [`src/commands.ts`](../src/commands.ts).
 
-1. `loadConfig()` — Zod-validated env → `AppConfig`
-2. `validateAiEnvironment()` — fail fast if AI enabled without API key
-3. `BaileysWhatsAppSender` + `StateStore` constructed
-4. `runCommand()` dispatched to [`src/commands.ts`](../src/commands.ts)
-
-Production always runs:
+Production runs:
 
 ```bash
 node dist/src/cli.js serve
 ```
 
-Used by `npm start`, Docker `CMD`, and Fly.io.
+## Commands
 
-### CLI commands
-
-| Command | Handler | Connects WA | Writes state | Notes |
-|---------|---------|-------------|--------------|-------|
-| `serve` | `serve()` | Yes, stays open | On successful send | Acquires serve lock; runs scheduler |
-| `pair` | `pair()` | Yes, 30s then close | No | Clears auth first |
-| `pair-qr` | `pair()` with `authMethod=qr` | Same | No | Writes `data/pairing-qr.svg` |
-| `reset-auth` | `resetAuth()` | No | No | Deletes `data/auth/` |
-| `list-groups` | `listGroups()` | Yes, then close | No | Asserts serve not running |
-| `send-now` | `sendNow()` | Yes, then close | On success | `force: true`; asserts serve not running |
-| `preview` | `preview()` | No | No | Prints next quote to stdout |
-| `help` | `printHelp()` | No | No | Default when no command given |
-
----
+| Command | Connects WA | Writes state | Notes |
+|---------|-------------|--------------|-------|
+| `serve` | Yes, stays open | On successful scheduled send | Acquires serve lock; starts scheduler |
+| `send-now` | Yes, then closes | On successful send | Forces send for today |
+| `preview` | No | No | Fetches and prints next Gita message |
+| `list-groups` | Yes, then closes | No | Blocked while `serve` runs |
+| `pair` / `pair-qr` | Yes, then closes | No | Resets auth first |
+| `reset-auth` | No | No | Deletes `data/auth/` |
+| `help` | No | No | Prints usage |
 
 ## Module map
 
-Dependency direction: **`commands` orchestrates** → **`quote-runner`** (idempotent send) → **`quote-source`** (selection) → **`wikiquote` / `quotes`**. The `WhatsAppSender` interface in [`src/types.ts`](../src/types.ts) allows test doubles.
+| File | Responsibility |
+|------|----------------|
+| [`src/config.ts`](../src/config.ts) | Env schema and validation helpers |
+| [`src/types.ts`](../src/types.ts) | Core state, Gita verse, WhatsApp sender types |
+| [`src/gita.ts`](../src/gita.ts) | Gita verse counts, cursor math, API fetch, normalization, validation |
+| [`src/gita-runner.ts`](../src/gita-runner.ts) | Idempotent daily Gita send primitive |
+| [`src/message.ts`](../src/message.ts) | Gita WhatsApp message renderer |
+| [`src/commands.ts`](../src/commands.ts) | CLI command orchestration and scheduled retry loop |
+| [`src/scheduler.ts`](../src/scheduler.ts) | Cron trigger and catch-up polling |
+| [`src/date.ts`](../src/date.ts) | Timezone date keys and catch-up window logic |
+| [`src/state-store.ts`](../src/state-store.ts) | Atomic `state.json` load/save and migration |
+| [`src/whatsapp.ts`](../src/whatsapp.ts) | Baileys connection, send, reconnect, group listing |
+| [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Send-only inbound decrypt skip |
+| [`src/serve-lock.ts`](../src/serve-lock.ts) | Single `serve` process lock |
+| [`src/http-server.ts`](../src/http-server.ts) | Optional health webhook |
+| [`src/health-*`](../src) | Health payload schema, state, and Hindi report rendering |
 
-### CLI / orchestration
+## Gita sequence and state
 
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/cli.ts`](../src/cli.ts) | Parse argv, bootstrap deps, exit codes | Adding a new top-level command |
-| [`src/commands.ts`](../src/commands.ts) | All command handlers; wires scheduler, pairing, send flows | Changing command behavior or retry policy |
+State shape:
 
-### Config / types / logging
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/config.ts`](../src/config.ts) | Zod env schema → `AppConfig` | Adding/changing env vars |
-| [`src/types.ts`](../src/types.ts) | `Quote`, `BotState`, `WhatsAppSender` | Changing core data shapes |
-| [`src/logger.ts`](../src/logger.ts) | Pino logger factory | Changing log format or defaults |
-
-### Scheduling
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/scheduler.ts`](../src/scheduler.ts) | `node-cron` daily trigger, catch-up polling, in-flight guard | Changing schedule or retry timing |
-| [`src/date.ts`](../src/date.ts) | TZ-aware date keys, cron expression, catch-up window (4h default) | Changing date logic or grace period |
-| [`src/serve-lock.ts`](../src/serve-lock.ts) | PID file lock for single `serve` instance | Changing concurrency rules |
-
-### Quote pipeline
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/quote-source.ts`](../src/quote-source.ts) | Wikiquote vs local selection, dedup, fallback | Changing selection strategy |
-| [`src/wikiquote.ts`](../src/wikiquote.ts) | MediaWiki API fetch, wikitext parsing | Changing Wikiquote integration |
-| [`src/quotes.ts`](../src/quotes.ts) | Local bank load, round-robin, interleave-by-author | Changing local rotation |
-| [`src/approved-authors.ts`](../src/approved-authors.ts) | Built-in approved Wikiquote page list (~50 authors) | Adding trusted Wikiquote sources |
-| [`src/quote-filter.ts`](../src/quote-filter.ts) | Morning-suitability and safety filters | Changing quote acceptance rules |
-| [`src/ai-reflection.ts`](../src/ai-reflection.ts) | Optional Ollama Cloud reflection generation | Changing AI enrichment |
-
-### Messaging
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/whatsapp.ts`](../src/whatsapp.ts) | Baileys connect, send, reconnect, list groups | Changing WhatsApp behavior |
-| [`src/message.ts`](../src/message.ts) | Hindi message template rendering | Changing output format |
-| [`src/inbound-jid.ts`](../src/inbound-jid.ts) | Tell Baileys to ignore inbound decrypt | Rarely — send-only design |
-
-### Health webhook
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/http-server.ts`](../src/http-server.ts) | Node `http` server; routing, bearer auth, `processHealthWebhook` core | Changing endpoints, auth, or ingest flow |
-| [`src/health-schema.ts`](../src/health-schema.ts) | Zod payload validation + unit-stripping coercion → `HealthEntry` | Changing accepted fields or parsing |
-| [`src/health-store.ts`](../src/health-store.ts) | Atomic JSON store for `health.json`; upsert, mark-posted, streak/average | Changing persistence or insights math |
-| [`src/health-message.ts`](../src/health-message.ts) | Hindi health report renderer + default encouragement | Changing report layout |
-| [`src/health-summary.ts`](../src/health-summary.ts) | Optional AI one-line Hindi encouragement (reuses AI provider config) | Changing AI summary behavior |
-| [`src/health-types.ts`](../src/health-types.ts) | `HealthEntry`, `HealthState`, `HealthWorkout` | Changing health data shapes |
-
-### State / idempotency
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/state-store.ts`](../src/state-store.ts) | Atomic JSON read/write for `state.json` | Changing persistence format |
-| [`src/quote-runner.ts`](../src/quote-runner.ts) | Idempotent daily send primitive | Changing skip/send logic or send retries |
-
-### Data / scripts
-
-| File | Responsibility | Edit when |
-|------|----------------|-----------|
-| [`src/data/quotes.json`](../src/data/quotes.json) | Curated local fallback quotes | Adding/editing fallback quotes |
-| [`src/scripts/validate-quotes.ts`](../src/scripts/validate-quotes.ts) | CI/dev validation of local bank | Changing validation rules |
-
----
-
-## Runtime flows
-
-### Flow A: `serve` (production)
-
-```mermaid
-sequenceDiagram
-    participant CLI as cli.ts
-    participant CMD as commands.serve
-    participant Lock as serve-lock
-    participant WA as whatsapp.ts
-    participant Sch as scheduler.ts
-    participant Run as runScheduledDailyQuote
-    participant QR as quote-runner
-    participant Src as quote-source
-    participant AI as ai-reflection
-    participant State as state-store
-
-    CLI->>CMD: runCommand serve
-    CMD->>Lock: acquireServeLock
-    CMD->>WA: connect
-    CMD->>Sch: startDailySchedule
-    Note over Sch: cron at QUOTE_TIME in TZ
-    Sch->>Run: task triggered
-    Run->>WA: ensureConnected
-    Run->>State: load
-    Run->>QR: runDailyQuote
-    QR->>Src: selectQuote
-    Src-->>QR: quote + nextState
-    QR->>AI: enrichQuoteReflection optional
-    QR->>WA: sendText groupJid
-    QR-->>Run: sent + nextState
-    Run->>State: save on success
-```
-
-**Retry layers:**
-
-1. **Send-level** ([`quote-runner.ts`](../src/quote-runner.ts)): 3 attempts, 1s / 2s backoff before throwing
-2. **Schedule-level** ([`commands.ts`](../src/commands.ts) `runScheduledDailyQuote`): up to 3 attempts, 5 min apart; aborts early if today's date already in `sentDates` or session logged out
-
-**Scheduler details** ([`scheduler.ts`](../src/scheduler.ts)):
-
-- Primary trigger: `node-cron` at `QUOTE_TIME` in `TZ`
-- `missedExecutionTolerance`: 5 minutes (node-cron `execution:missed` event)
-- Catch-up poll: every 15 minutes if `QUOTE_CATCH_UP=true` and today's quote not sent
-- Catch-up window: 4 hours after `QUOTE_TIME` ([`date.ts`](../src/date.ts) `DEFAULT_CATCH_UP_GRACE_HOURS`); e.g. 06:00 schedule → eligible until 10:00
-- `noOverlap: true` + `sendInFlight` guard prevents concurrent sends
-
-On SIGINT/SIGTERM, `serve` releases the serve lock and exits.
-
-### Flow B: quote selection
-
-```mermaid
-flowchart TD
-    Start[selectQuote] --> Source{QUOTE_SOURCE}
-    Source -->|wikiquote| Fetch[fetchWikiquoteQuotes]
-    Fetch --> Filter[quote-filter + dedup usedQuoteIds]
-    Filter --> HasQuote{unused safe quote?}
-    HasQuote -->|yes| Interleave[interleaveByAuthor + rotationIndex]
-    HasQuote -->|no| Fallback[selectNextQuote from quotes.json]
-    Fetch -->|API error| Fallback
-    Source -->|local| Local[selectNextQuote from quotes.json]
-    Interleave --> Done[return quote + nextState]
-    Fallback --> Done
-    Local --> Done
-```
-
-- `usedQuoteIds` tracks last 5000 sent IDs to avoid repeats
-- `rotationIndex` advances round-robin position
-- Wikiquote modes (`WIKIQUOTE_MODE`): `pages` (approved list, recommended), `authors` (category random), `any` (random page)
-
-### Flow C: pairing
-
-1. `pair` / `pair-qr` calls `resetAuth()` — deletes `data/auth/`
-2. `sender.connect()` — Baileys pairing code or QR
-3. Process stays alive 30 seconds to persist credentials
-4. `sender.close()` — one-shot command exits
-
-QR mode also writes `data/pairing-qr.svg`. After re-pairing on Fly.io, restart the machine so `serve` loads the new session.
-
-### Flow D: health webhook
-
-Only active when `HEALTH_WEBHOOK_ENABLED=true`. The server is started by `serve()` ([`commands.ts`](../src/commands.ts)) and closed on shutdown.
-
-```mermaid
-sequenceDiagram
-    participant SC as Apple Shortcut
-    participant HS as http-server.ts
-    participant Schema as health-schema
-    participant Store as health-store
-    participant AI as health-summary
-    participant Msg as health-message
-    participant WA as whatsapp.ts
-
-    SC->>HS: POST /health (Bearer token)
-    HS->>HS: isAuthorized
-    HS->>Schema: parseHealthPayload
-    HS->>Store: load + upsertEntry + save
-    alt already posted today and not force
-        HS-->>SC: 200 {status: stored, posted: false}
-    else post report
-        HS->>Store: stepGoalStreak + trailingStepsAverage
-        HS->>AI: generateHealthSummary (optional)
-        HS->>Msg: renderHealthMessage
-        HS->>WA: ensureConnected + sendText per group (3 retries each)
-        HS->>Store: markPosted + save
-        HS-->>SC: 200 {status: sent, results: [{jid, messageId}]}
-    end
-```
-
-- Auth: `Authorization: Bearer <token>` or `x-webhook-token` header, compared with a constant-time check.
-- Idempotency: `postedAt` per date in `health.json`; same-day reposts require `?force=true`.
-- The payload is stored before sending, so partial payloads accumulate; a later payload for the same date refines the entry.
-- Send shares the single live Baileys session via the same `sender` injected into `serve`.
-- **Multiple groups**: `HEALTH_GROUP_JID` may be a comma-separated list. The report is rendered once and sent to every JID in parallel (`Promise.allSettled`). The day is marked posted if **at least one** group succeeds; per-group failures are logged and returned in `results` without blocking the other sends. The request only fails (500, not marked posted) if every group fails.
-
----
-
-## Data model
-
-### Core types ([`src/types.ts`](../src/types.ts))
-
-```typescript
-type Quote = {
-  id: string;
-  text: string;
-  author: string;
-  language: 'hi' | 'ur';
-  mood: 'inspirational' | 'wisdom' | 'devotional' | 'hopeful';
-  reflection: string;
-  source?: string;
-};
-
+```ts
 type BotState = {
-  rotationIndex: number;
-  usedQuoteIds: string[];  // last 5000 kept
-  sentDates: Record<string, { quoteId: string; sentAt: string; messageId?: string }>;
+  gitaCursor: number;
+  sentDates: Record<string, { verseId: string; label: string; sentAt: string; messageId?: string }>;
 };
-
-interface WhatsAppSender {
-  connect(): Promise<void>;
-  ensureConnected(): Promise<void>;
-  isConnected(): boolean;
-  isLoggedOut(): boolean;
-  close(): Promise<void>;
-  sendText(jid: string, text: string): Promise<SendResult>;
-  listGroups(): Promise<Array<{ jid: string; subject: string; participants: number }>>;
-}
 ```
 
-`dateKey` in `sentDates` is `YYYY-MM-DD` in the configured `TZ` ([`date.ts`](../src/date.ts) `localDateKey`).
+`gitaCursor` is zero-based. `0` means Chapter 1, Verse 1. Canonical verse counts are hard-coded in [`src/gita.ts`](../src/gita.ts):
 
-### Health types ([`src/health-types.ts`](../src/health-types.ts))
-
-```typescript
-type HealthEntry = {
-  date: string;              // YYYY-MM-DD
-  steps?: number;
-  distanceKm?: number;
-  activeEnergyKcal?: number;
-  exerciseMinutes?: number;
-  standHours?: number;
-  sleepHours?: number;
-  sleepQuality?: string;
-  restingHeartRate?: number;
-  workouts?: Array<{ type: string; minutes?: number; energyKcal?: number }>;
-  notes?: string;
-  receivedAt: string;        // ISO timestamp of ingest
-  postedAt?: string;         // ISO timestamp when posted to WhatsApp
-  messageId?: string;      // legacy single-group id, kept for back-compat reads
-  messageIds?: Record<string, string>; // messageId per group JID, when HEALTH_GROUP_JID lists multiple groups
-};
-
-type HealthState = { entries: Record<string, HealthEntry> };  // keyed by date
+```ts
+[47, 72, 43, 42, 29, 47, 30, 28, 34, 42, 55, 20, 35, 27, 20, 24, 28, 78]
 ```
 
-`health.json` keeps the most recent ~400 dated entries ([`health-store.ts`](../src/health-store.ts)).
+After 18.78, the cursor wraps to 1.1.
 
-### Filesystem layout
+## API handling
 
-All paths relative to `DATA_DIR` (default `./data`):
+[`src/gita.ts`](../src/gita.ts) fetches:
 
-| Path | Contents | Backup priority |
-|------|----------|-----------------|
-| `auth/` | Baileys multi-file session credentials | Critical — required to stay connected |
-| `state.json` | `BotState` — rotation, used IDs, sent dates | High — prevents duplicate sends |
-| `serve.lock` | `{pid}\n{startedAt}` — active serve process | Ephemeral — safe to remove if stale |
-| `pairing-qr.svg` | QR code artifact (qr auth mode) | Ephemeral |
-| `health.json` | `HealthState` — dated health entries + posted markers | High — health history; only when webhook enabled |
+```text
+{GITA_API_BASE_URL}/slok/{chapter}/{verse}/
+```
 
----
+A response must contain:
+
+- requested chapter/verse
+- non-empty Sanskrit shloka text
+- non-empty Hindi meaning with Devanagari text
+
+`GITA_HINDI_FIELD` defaults to `tej.ht`. If that field is absent or invalid, the normalizer searches for the first valid Hindi meaning field. If validation fails, the send attempt fails; no fallback content is sent.
+
+## Send flow
+
+```mermaid
+sequenceDiagram
+    participant Sch as scheduler.ts
+    participant Cmd as commands.ts
+    participant Store as state-store.ts
+    participant Run as gita-runner.ts
+    participant Gita as gita.ts
+    participant Msg as message.ts
+    participant WA as whatsapp.ts
+
+    Sch->>Cmd: scheduled task
+    Cmd->>WA: ensureConnected
+    Cmd->>Store: load
+    Cmd->>Run: runDailyGita
+    Run->>Gita: selectNextGitaVerse
+    Gita-->>Run: verse + nextState
+    Run->>Msg: renderGitaMessage
+    Run->>WA: sendText
+    WA-->>Run: messageId
+    Run-->>Cmd: sent + nextState
+    Cmd->>Store: save nextState
+```
+
+Retry layers:
+
+1. `gita-runner.ts`: WhatsApp send retry, 3 attempts with 1s/2s backoff.
+2. `commands.ts`: scheduled attempt retry, 3 attempts with 5 minutes between attempts.
+3. `scheduler.ts`: catch-up polling until the 4-hour window expires.
 
 ## Message format
 
-Rendered by [`src/message.ts`](../src/message.ts):
-
-```
+```text
 🌅 सुप्रभात
 
-✨ आज की पंक्ति
-“{quote.text}”
-— {author}
+🕉️ श्रीमद्भगवद्गीता {chapter}.{verse}
+{sanskrit shloka}
 
-🌿 आज की दिशा: {reflection}
+📖 भावार्थ:
+{hindi meaning}
 ```
 
-When `AI_PROVIDER=openai` or `AI_PROVIDER=ollama-cloud`, [`src/ai-reflection.ts`](../src/ai-reflection.ts) may rewrite **only** the reflection line (`आज की दिशा`). Quote text and author are never modified. On AI failure or validation error, the built-in reflection from the quote source is used.
+## Data files
 
-| Provider | API | Default model | Env key |
-|----------|-----|---------------|---------|
-| `openai` | `https://api.openai.com/v1/chat/completions` | `gpt-4o-mini` | `OPENAI_API_KEY` |
-| `ollama-cloud` | `{OLLAMA_BASE_URL}/chat` | `gpt-oss:120b` | `OLLAMA_API_KEY` |
+| Path | Purpose | Criticality |
+|------|---------|-------------|
+| `data/auth/` | Baileys session credentials | High |
+| `data/state.json` | Gita cursor and sent dates | High |
+| `data/serve.lock` | Active serve PID | Ephemeral |
+| `data/health.json` | Health webhook state, when enabled | Medium/high |
 
----
-
-## Health webhook
-
-Optional feature for posting a daily health report from Apple Shortcuts. Disabled by default (`HEALTH_WEBHOOK_ENABLED=false`).
-
-**Lifecycle:** [`commands.ts`](../src/commands.ts) `serve()` starts [`startHealthServer`](../src/http-server.ts) after the WhatsApp connection opens, and closes it on shutdown. The server is *not* started for any other CLI command. It shares the `serve` process's single Baileys `sender` — this is why it must live in-process (Baileys allows only one session).
-
-**Validation:** [`cli.ts`](../src/cli.ts) calls `validateHealthEnvironment` at startup. When enabled it requires `HEALTH_WEBHOOK_TOKEN` and at least one group JID (`HEALTH_GROUP_JID`, else `WHATSAPP_GROUP_JID`, each ending in `@g.us`). `HEALTH_GROUP_JID` may be a comma-separated list to post to multiple groups (`requireHealthGroupJids` in [`config.ts`](../src/config.ts)). Fails fast otherwise.
-
-**Routes:**
-
-| Method | Path | Auth | Behavior |
-|--------|------|------|----------|
-| `GET` | `/healthz` | none | `{"status":"ok"}` liveness |
-| `POST` | `/health` | bearer token | Validate → store → (post unless already posted today) |
-
-`POST /health?force=true` re-posts even if already posted for that date.
-
-**Rendered report** ([`health-message.ts`](../src/health-message.ts)):
-
-```
-🩺 आज की सेहत रिपोर्ट
-
-👟 कदम: 9,123 ✅
-🏃 व्यायाम: 35 मिनट
-😴 नींद: 7.5 घंटे (अच्छी)
-
-🔥 3 दिन से कदमों का लक्ष्य पूरा — शानदार!
-📊 7-दिन औसत कदम: 7,500
-
-🌱 {AI summary or default encouragement}
-```
-
-The closing line uses [`health-summary.ts`](../src/health-summary.ts) when `AI_PROVIDER` is set (same provider/keys as the quote reflection), validated to a single safe Hindi line; otherwise a built-in encouragement based on whether the step goal was met.
-
-See [HEALTH-SHORTCUT.md](./HEALTH-SHORTCUT.md) for the Shortcut build and curl examples.
-
----
-
-## Configuration
-
-Config is loaded via `dotenv` + Zod in [`src/config.ts`](../src/config.ts). Invalid env fails fast at startup with field-level errors.
-
-See [`.env.example`](../.env.example) for the canonical full list. Grouped summary:
-
-| Concern | Key variables | Defaults |
-|---------|---------------|----------|
-| WhatsApp target | `WHATSAPP_GROUP_JID` | — (required for send) |
-| Quote source | `QUOTE_SOURCE`, `WIKIQUOTE_*` | `wikiquote`, `pages` mode, `hi` language |
-| Schedule | `QUOTE_TIME`, `TZ`, `QUOTE_CATCH_UP` | `06:00`, `Asia/Kolkata`, `true` |
-| Auth | `AUTH_METHOD`, `PAIRING_PHONE_NUMBER` | `pairing` |
-| Paths | `DATA_DIR`, `AUTH_DIR`, `STATE_FILE` | `./data`, `./data/auth`, `./data/state.json` |
-| AI | `AI_PROVIDER`, `OPENAI_*`, `OLLAMA_*`, `AI_TIMEOUT_MS` | `none` |
-| Logging | `LOG_LEVEL` | `info` |
-| Deploy reset | `RESET_AUTH_ON_START`, `RESET_AUTH_TOKEN` | `false` |
-| Health webhook | `HEALTH_WEBHOOK_ENABLED`, `HEALTH_WEBHOOK_PORT`, `HEALTH_WEBHOOK_TOKEN`, `HEALTH_GROUP_JID` (comma-separated list supported), `HEALTH_STEP_GOAL` | `false`, `8080`, —, falls back to `WHATSAPP_GROUP_JID`, `8000` |
-
-Fly.io production overrides many defaults in [`fly.toml`](../fly.toml); secrets (`PAIRING_PHONE_NUMBER`, `WHATSAPP_GROUP_JID`, `OPENAI_API_KEY` or `OLLAMA_API_KEY`) are set via `fly secrets set`.
-
----
-
-## Deployment topologies
-
-| Target | How to run | Persistent data |
-|--------|------------|-----------------|
-| Local dev | `npm run dev -- <command>` (tsx) | `./data` |
-| Production (bare) | `npm run build && npm start` | `./data` |
-| Docker Compose | `docker compose up` — see [`docker-compose.yml`](../docker-compose.yml) | Volume `./data:/app/data` |
-| Fly.io | `fly deploy` — see [`fly.toml`](../fly.toml) | Volume `wapp_quote_data` → `/app/data` |
-
-The scheduler runs **in-process** via `node-cron`. There is no external cron job or Fly Cron.
-
-Docker build: multi-stage Node 22, compiles TypeScript to `dist/`, copies `src/data/quotes.json`.
-
----
-
-## Testing map
-
-Vitest tests serve as behavioral specs. Run with `npm test`.
+## Tests
 
 | Area | Test file |
 |------|-----------|
-| Scheduler / catch-up | `test/scheduler.test.ts`, `test/date.test.ts` |
-| Quote selection | `test/quote-source.test.ts`, `test/quotes.test.ts` |
-| Idempotent send | `test/quote-runner.test.ts` |
-| Wikiquote parsing | `test/wikiquote.test.ts` |
-| Quote filters | `test/quote-filter.test.ts` |
-| Approved authors | `test/approved-authors.test.ts` |
-| Serve lock | `test/serve-lock.test.ts` |
-| Config validation | `test/config.test.ts` |
-| Message template | `test/message.test.ts` |
-| AI reflection | `test/ai-reflection.test.ts` |
-| Inbound JID ignore | `test/inbound-jid.test.ts` |
+| Config | `test/config.test.ts` |
+| Date/scheduler | `test/date.test.ts`, `test/scheduler.test.ts` |
+| Gita API/cursor | `test/gita.test.ts` |
+| Daily send primitive | `test/gita-runner.test.ts` |
+| Message renderer | `test/message.test.ts` |
 | State store | `test/state-store.test.ts` |
-| Health payload parsing | `test/health-schema.test.ts` |
-| Health store / streaks | `test/health-store.test.ts` |
-| Health message render | `test/health-message.test.ts` |
-| Health AI summary | `test/health-summary.test.ts` |
-| Health webhook flow / auth | `test/http-server.test.ts` |
 | Commands | `test/commands.test.ts` |
-| Logger | `test/logger.test.ts` |
+| WhatsApp/inbound | `test/inbound-jid.test.ts` |
+| Health webhook | `test/health-*.test.ts`, `test/http-server.test.ts` |
 
-Additional checks: `npm run typecheck`, `npm run validate:quotes`.
+Run:
 
----
+```bash
+npm test
+npm run typecheck
+npm run build
+```
 
-## Agent cheat sheet
+## Common changes
 
-| If you need to… | Edit |
-|-----------------|------|
-| Change send time or catch-up window | `src/date.ts`, `src/scheduler.ts`, env `QUOTE_TIME` / `QUOTE_CATCH_UP` |
-| Add Wikiquote authors | `src/approved-authors.ts` or env `WIKIQUOTE_PAGES` |
-| Change message template | `src/message.ts` |
-| Add local fallback quotes | `src/data/quotes.json`, then `npm run validate:quotes` |
-| Change quote safety rules | `src/quote-filter.ts` |
-| Change WhatsApp connect/reconnect | `src/whatsapp.ts` |
-| Add a CLI command | `src/commands.ts` + `knownCommands` in `src/cli.ts` |
-| Change idempotency / state shape | `src/quote-runner.ts`, `src/state-store.ts`, `src/types.ts` |
-| Change env vars | `src/config.ts`, `.env.example` |
-| Change selection / fallback logic | `src/quote-source.ts` |
-| Change AI reflection behavior | `src/ai-reflection.ts` |
-| Change health webhook endpoints / auth | `src/http-server.ts` |
-| Change accepted health fields / parsing | `src/health-schema.ts` |
-| Change health report layout | `src/health-message.ts` |
-| Change health insights (streak/average) | `src/health-store.ts` |
-| Change health AI summary | `src/health-summary.ts` |
+| Change | Files |
+|--------|-------|
+| Change Gita API normalization | `src/gita.ts`, `test/gita.test.ts` |
+| Change message template | `src/message.ts`, `test/message.test.ts` |
+| Change idempotency/state | `src/gita-runner.ts`, `src/state-store.ts`, `src/types.ts` |
+| Change scheduling/catch-up | `src/scheduler.ts`, `src/date.ts`, `test/scheduler.test.ts` |
+| Change env vars | `src/config.ts`, `.env.example`, README |
+| Change health webhook | `src/http-server.ts`, `src/health-*` |
 
----
+## Operational notes
 
-## Operational pitfalls
-
-- **Re-pairing**: use `reset-auth` or `pair` (both clear `data/auth/`). For one-time deploy reset, set `RESET_AUTH_ON_START=true`. After re-pairing, restart `serve` (e.g. `fly machine restart`).
-- **Session conflict (Baileys status 440)**: `whatsapp.ts` waits 10s before reconnecting.
-- **Never run `send-now` or `list-groups` while `serve` is active** — they will fail with a serve-lock error, or worse, steal the session if the lock is stale.
-- **Stale serve lock**: if the PID in `serve.lock` is dead, the next `serve` or one-shot command will clear it automatically.
-- **Back up `data/auth/` and `data/state.json`** before server migration or destructive changes.
-- **Restarts are safe**: if today's quote was already sent, `runDailyQuote` returns `skipped` and does not resend.
-
----
-
-## Dependencies
-
-Runtime (see [`package.json`](../package.json)):
-
-| Package | Role |
-|---------|------|
-| `@whiskeysockets/baileys` | WhatsApp Web client |
-| `node-cron` | In-process daily scheduler |
-| `pino` | Structured logging |
-| `zod` | Env validation |
-| `dotenv` | Load `.env` |
-| `qrcode` / `qrcode-terminal` | QR pairing |
-
-Node.js >= 20 required (Docker uses Node 22).
+- Back up `data/auth/` and `data/state.json` before server migration.
+- Restarts are safe: if today's Gita message was recorded, it will not resend unless `send-now` is used.
+- If the Gita API is down or invalid, the bot skips/fails the attempt rather than sending stale content.
+- `send-now` and `list-groups` are blocked while `serve` runs to avoid WhatsApp session conflicts.

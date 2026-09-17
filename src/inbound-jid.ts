@@ -1,4 +1,4 @@
-/** Skip decrypting inbound chat traffic for a send-only quote bot. */
+/** Skip decrypting inbound chat traffic for a send-only Gita bot. */
 export function shouldIgnoreInboundJid(jid: string): boolean {
   const bare = jid.includes(':') ? jid.slice(jid.indexOf(':') + 1) : jid;
 
