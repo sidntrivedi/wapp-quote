@@ -16,6 +16,7 @@ swap_size_mb = 256
   GITA_API_BASE_URL = "https://vedicscriptures.github.io"
   GITA_API_TIMEOUT_MS = "10000"
   GITA_HINDI_FIELD = "tej.ht"
+  GITA_VERSES_PER_DAY = "2"
   GITA_TIME = "06:00"
   GITA_CATCH_UP = "true"
   TZ = "Asia/Kolkata"

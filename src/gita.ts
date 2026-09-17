@@ -1,5 +1,5 @@
 import type { AppConfig } from './config.js';
-import type { BotState, GitaVerse } from './types.js';
+import type { BotState, GitaVerse, GitaVerseBatch } from './types.js';
 
 export const GITA_VERSE_COUNTS = [47, 72, 43, 42, 29, 47, 30, 28, 34, 42, 55, 20, 35, 27, 20, 24, 28, 78] as const;
 export const TOTAL_GITA_VERSES = GITA_VERSE_COUNTS.reduce((sum, count) => sum + count, 0);
@@ -15,7 +15,7 @@ export class InvalidGitaResponseError extends Error {
   }
 }
 
-type GitaApiConfig = Pick<AppConfig, 'gitaApiBaseUrl' | 'gitaApiTimeoutMs' | 'gitaHindiField'>;
+type GitaApiConfig = Pick<AppConfig, 'gitaApiBaseUrl' | 'gitaApiTimeoutMs' | 'gitaHindiField' | 'gitaVersesPerDay'>;
 
 export type GitaApiOptions = {
   baseUrl: string;
@@ -24,26 +24,46 @@ export type GitaApiOptions = {
   fetchImpl?: typeof fetch;
 };
 
-export async function selectNextGitaVerse(options: {
+export async function selectNextGitaVerses(options: {
   config: GitaApiConfig;
   state: BotState;
   fetchImpl?: typeof fetch;
-}): Promise<{ verse: GitaVerse; nextState: BotState }> {
+}): Promise<{ batch: GitaVerseBatch; nextState: BotState }> {
   const cursor = normalizeCursor(options.state.gitaCursor);
-  const { chapter, verse } = gitaPositionFromIndex(cursor);
-  const selectedVerse = await fetchGitaVerse(chapter, verse, {
-    baseUrl: options.config.gitaApiBaseUrl,
-    timeoutMs: options.config.gitaApiTimeoutMs,
-    hindiField: options.config.gitaHindiField,
-    fetchImpl: options.fetchImpl
-  });
+  const verses: GitaVerse[] = [];
+
+  for (let offset = 0; offset < options.config.gitaVersesPerDay; offset += 1) {
+    const { chapter, verse } = gitaPositionFromIndex(cursor + offset);
+    verses.push(
+      await fetchGitaVerse(chapter, verse, {
+        baseUrl: options.config.gitaApiBaseUrl,
+        timeoutMs: options.config.gitaApiTimeoutMs,
+        hindiField: options.config.gitaHindiField,
+        fetchImpl: options.fetchImpl
+      })
+    );
+  }
 
   return {
-    verse: selectedVerse,
+    batch: buildGitaVerseBatch(verses),
     nextState: {
       ...options.state,
-      gitaCursor: (cursor + 1) % TOTAL_GITA_VERSES
+      gitaCursor: (cursor + verses.length) % TOTAL_GITA_VERSES
     }
+  };
+}
+
+export function buildGitaVerseBatch(verses: GitaVerse[]): GitaVerseBatch {
+  if (verses.length === 0) {
+    throw new Error('Gita verse batch cannot be empty.');
+  }
+
+  return {
+    kind: 'gita-batch',
+    id: verses.map((verse) => verse.id).join('--'),
+    verseIds: verses.map((verse) => verse.id),
+    label: gitaRangeLabel(verses),
+    verses
   };
 }
 
@@ -147,6 +167,14 @@ export function gitaIndexFromPosition(chapter: number, verse: number): number {
   }
 
   return GITA_VERSE_COUNTS.slice(0, chapter - 1).reduce((sum, count) => sum + count, 0) + verse - 1;
+}
+
+function gitaRangeLabel(verses: GitaVerse[]): string {
+  const first = verses[0];
+  const last = verses[verses.length - 1];
+  const start = `${first.chapter}.${first.verse}`;
+  const end = `${last.chapter}.${last.verse}`;
+  return `भगवद्गीता ${start}${start === end ? '' : `–${end}`}`;
 }
 
 function normalizeCursor(value: number): number {

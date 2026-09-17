@@ -8,6 +8,7 @@ describe('config', () => {
     expect(config.gitaApiBaseUrl).toBe('https://vedicscriptures.github.io');
     expect(config.gitaApiTimeoutMs).toBe(10000);
     expect(config.gitaHindiField).toBe('tej.ht');
+    expect(config.gitaVersesPerDay).toBe(2);
     expect(config.gitaTime).toBe('06:00');
     expect(config.gitaCatchUp).toBe(true);
     expect(config.timeZone).toBe('Asia/Kolkata');
@@ -19,6 +20,7 @@ describe('config', () => {
       GITA_API_BASE_URL: 'https://example.com/api/',
       GITA_API_TIMEOUT_MS: '15000',
       GITA_HINDI_FIELD: 'custom.meaning',
+      GITA_VERSES_PER_DAY: '3',
       GITA_TIME: '05:30',
       GITA_CATCH_UP: 'false'
     });
@@ -26,6 +28,7 @@ describe('config', () => {
     expect(config.gitaApiBaseUrl).toBe('https://example.com/api');
     expect(config.gitaApiTimeoutMs).toBe(15000);
     expect(config.gitaHindiField).toBe('custom.meaning');
+    expect(config.gitaVersesPerDay).toBe(3);
     expect(config.gitaTime).toBe('05:30');
     expect(config.gitaCatchUp).toBe(false);
   });

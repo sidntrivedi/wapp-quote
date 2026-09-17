@@ -28,7 +28,13 @@ describe('StateStore', () => {
       filePath,
       JSON.stringify({
         gitaCursor: 3,
-        sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
+        sentDates: {
+          '2026-06-16': {
+            verseIds: ['gita-01-001', 'gita-01-002'],
+            label: 'भगवद्गीता 1.1–1.2',
+            sentAt: '2026-06-16T00:00:00.000Z'
+          }
+        }
       }),
       'utf8'
     );
@@ -36,7 +42,13 @@ describe('StateStore', () => {
     const store = new StateStore(filePath);
     await expect(store.load()).resolves.toEqual({
       gitaCursor: 3,
-      sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
+      sentDates: {
+        '2026-06-16': {
+          verseIds: ['gita-01-001', 'gita-01-002'],
+          label: 'भगवद्गीता 1.1–1.2',
+          sentAt: '2026-06-16T00:00:00.000Z'
+        }
+      }
     });
   });
 
@@ -51,13 +63,19 @@ describe('StateStore', () => {
   it('writes atomically via a temp file', async () => {
     const store = new StateStore(filePath);
     const state: BotState = {
-      gitaCursor: 1,
-      sentDates: { '2026-06-16': { verseId: 'gita-01-001', label: 'भगवद्गीता 1.1', sentAt: '2026-06-16T00:00:00.000Z' } }
+      gitaCursor: 2,
+      sentDates: {
+        '2026-06-16': {
+          verseIds: ['gita-01-001', 'gita-01-002'],
+          label: 'भगवद्गीता 1.1–1.2',
+          sentAt: '2026-06-16T00:00:00.000Z'
+        }
+      }
     };
 
     await store.save(state);
 
-    expect(await fs.readFile(filePath, 'utf8')).toContain('"gitaCursor": 1');
+    expect(await fs.readFile(filePath, 'utf8')).toContain('"gitaCursor": 2');
     await expect(fs.stat(`${filePath}.tmp`)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 

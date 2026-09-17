@@ -1,8 +1,8 @@
 import type { AppConfig } from './config.js';
 import { localDateKey } from './date.js';
-import { selectNextGitaVerse } from './gita.js';
+import { selectNextGitaVerses } from './gita.js';
 import { renderGitaMessage } from './message.js';
-import type { BotState, GitaVerse, WhatsAppSender } from './types.js';
+import type { BotState, GitaVerseBatch, WhatsAppSender } from './types.js';
 
 type RunDailyGitaOptions = {
   sender: Pick<WhatsAppSender, 'sendText'>;
@@ -10,27 +10,27 @@ type RunDailyGitaOptions = {
   groupJid: string;
   now: Date;
   timeZone: string;
-  config: Pick<AppConfig, 'gitaApiBaseUrl' | 'gitaApiTimeoutMs' | 'gitaHindiField'>;
+  config: Pick<AppConfig, 'gitaApiBaseUrl' | 'gitaApiTimeoutMs' | 'gitaHindiField' | 'gitaVersesPerDay'>;
   fetchImpl?: typeof fetch;
-  selectVerse?: (state: BotState) => Promise<{ verse: GitaVerse; nextState: BotState }> | { verse: GitaVerse; nextState: BotState };
-  renderMessage?: (verse: GitaVerse) => Promise<string> | string;
+  selectVerses?: (state: BotState) => Promise<{ batch: GitaVerseBatch; nextState: BotState }> | { batch: GitaVerseBatch; nextState: BotState };
+  renderMessage?: (batch: GitaVerseBatch) => Promise<string> | string;
   force?: boolean;
 };
 
 export type RunDailyGitaResult =
-  | { status: 'skipped'; dateKey: string; verseId: string }
-  | { status: 'sent'; dateKey: string; verseId: string; messageId?: string; nextState: BotState };
+  | { status: 'skipped'; dateKey: string; verseIds: string[] }
+  | { status: 'sent'; dateKey: string; verseIds: string[]; messageId?: string; nextState: BotState };
 
 export async function runDailyGita(options: RunDailyGitaOptions): Promise<RunDailyGitaResult> {
   const dateKey = localDateKey(options.now, options.timeZone);
   const existing = options.state.sentDates[dateKey];
 
   if (existing && !options.force) {
-    return { status: 'skipped', dateKey, verseId: existing.verseId };
+    return { status: 'skipped', dateKey, verseIds: existing.verseIds };
   }
 
-  const { verse, nextState } = await selectVerse(options);
-  const message = await renderMessage(options, verse);
+  const { batch, nextState } = await selectVerses(options);
+  const message = await renderMessage(options, batch);
   const result = await sendWithRetry(() => options.sender.sendText(options.groupJid, message), 3);
 
   const sentState: BotState = {
@@ -38,35 +38,35 @@ export async function runDailyGita(options: RunDailyGitaOptions): Promise<RunDai
     sentDates: {
       ...nextState.sentDates,
       [dateKey]: {
-        verseId: verse.id,
-        label: verse.label,
+        verseIds: batch.verseIds,
+        label: batch.label,
         sentAt: options.now.toISOString(),
         messageId: result.messageId
       }
     }
   };
 
-  return { status: 'sent', dateKey, verseId: verse.id, messageId: result.messageId, nextState: sentState };
+  return { status: 'sent', dateKey, verseIds: batch.verseIds, messageId: result.messageId, nextState: sentState };
 }
 
-async function selectVerse(options: RunDailyGitaOptions): Promise<{ verse: GitaVerse; nextState: BotState }> {
-  if (options.selectVerse) {
-    return options.selectVerse(options.state);
+async function selectVerses(options: RunDailyGitaOptions): Promise<{ batch: GitaVerseBatch; nextState: BotState }> {
+  if (options.selectVerses) {
+    return options.selectVerses(options.state);
   }
 
-  return selectNextGitaVerse({
+  return selectNextGitaVerses({
     config: options.config,
     state: options.state,
     fetchImpl: options.fetchImpl
   });
 }
 
-async function renderMessage(options: RunDailyGitaOptions, verse: GitaVerse): Promise<string> {
+async function renderMessage(options: RunDailyGitaOptions, batch: GitaVerseBatch): Promise<string> {
   if (options.renderMessage) {
-    return options.renderMessage(verse);
+    return options.renderMessage(batch);
   }
 
-  return renderGitaMessage(verse);
+  return renderGitaMessage(batch);
 }
 
 async function sendWithRetry<T>(operation: () => Promise<T>, attempts: number): Promise<T> {

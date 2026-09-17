@@ -3,7 +3,7 @@ import type { Logger } from 'pino';
 import type { AppConfig } from './config.js';
 import { requireGroupJid, requireHealthGroupJids } from './config.js';
 import { localDateKey } from './date.js';
-import { fetchGitaVerse, gitaPositionFromIndex } from './gita.js';
+import { selectNextGitaVerses } from './gita.js';
 import { runDailyGita } from './gita-runner.js';
 import { HealthStore } from './health-store.js';
 import { startHealthServer, type HealthServerHandle } from './http-server.js';
@@ -130,11 +130,11 @@ async function runScheduledDailyGita(options: {
       if (result.status === 'sent') {
         await options.stateStore.save(result.nextState);
         options.logger.info(
-          { dateKey: result.dateKey, verseId: result.verseId, messageId: result.messageId, attempt },
+          { dateKey: result.dateKey, verseIds: result.verseIds, messageId: result.messageId, attempt },
           'daily Gita message sent'
         );
       } else {
-        options.logger.info({ dateKey: result.dateKey, verseId: result.verseId, attempt }, 'daily Gita message already sent');
+        options.logger.info({ dateKey: result.dateKey, verseIds: result.verseIds, attempt }, 'daily Gita message already sent');
       }
 
       return;
@@ -209,7 +209,7 @@ async function sendNow(options: {
 
   if (result.status === 'sent') {
     await options.stateStore.save(result.nextState);
-    options.logger.info({ dateKey: result.dateKey, verseId: result.verseId, messageId: result.messageId }, 'Gita message sent');
+    options.logger.info({ dateKey: result.dateKey, verseIds: result.verseIds, messageId: result.messageId }, 'Gita message sent');
   }
 
   await options.sender.close();
@@ -217,13 +217,11 @@ async function sendNow(options: {
 
 async function preview(options: { config: AppConfig; stateStore: StateStore }): Promise<void> {
   const state = await options.stateStore.load();
-  const { chapter, verse } = gitaPositionFromIndex(state.gitaCursor);
-  const gitaVerse = await fetchGitaVerse(chapter, verse, {
-    baseUrl: options.config.gitaApiBaseUrl,
-    timeoutMs: options.config.gitaApiTimeoutMs,
-    hindiField: options.config.gitaHindiField
+  const { batch } = await selectNextGitaVerses({
+    config: options.config,
+    state
   });
-  console.log(renderGitaMessage(gitaVerse));
+  console.log(renderGitaMessage(batch));
 }
 
 function printHelp(): void {
@@ -234,8 +232,8 @@ Commands:
   pair-qr       Link WhatsApp by scanning a terminal QR code
   reset-auth    Remove saved WhatsApp auth so pairing starts fresh
   list-groups   Print group names and JIDs
-  preview       Print the next Bhagavad Gita shloka without sending
-  send-now      Send the next Bhagavad Gita shloka immediately
+  preview       Print the next Bhagavad Gita shlokas without sending
+  send-now      Send the next Bhagavad Gita shlokas immediately
   serve         Run the daily scheduler
   help          Show this help
 `);

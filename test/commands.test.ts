@@ -38,16 +38,20 @@ describe('runCommand', () => {
   function stubGitaFetch(): void {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
+      vi.fn(async (url: string | URL | Request) => {
+        const match = String(url).match(/\/slok\/(\d+)\/(\d+)\//);
+        const chapter = Number(match?.[1]);
+        const verse = Number(match?.[2]);
+
+        return new Response(
           JSON.stringify({
-            chapter: 1,
-            verse: 1,
-            slok: 'धृतराष्ट्र उवाच',
-            tej: { ht: 'धृतराष्ट्र ने पूछा।' }
+            chapter,
+            verse,
+            slok: verse === 1 ? 'धृतराष्ट्र उवाच' : 'सञ्जय उवाच',
+            tej: { ht: verse === 1 ? 'धृतराष्ट्र ने पूछा।' : 'संजय ने कहा।' }
           })
-        )
-      )
+        );
+      })
     );
   }
 
@@ -79,7 +83,8 @@ describe('runCommand', () => {
       stateStore
     });
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('🕉️ श्रीमद्भगवद्गीता 1.1'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('🕉️ श्रीमद्भगवद्गीता 1.1–1.2'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('सञ्जय उवाच'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('📖 भावार्थ:'));
   });
 
@@ -104,7 +109,7 @@ describe('runCommand', () => {
     expect(sender.close).toHaveBeenCalledOnce();
 
     const state = await stateStore.load();
-    expect(state.gitaCursor).toBe(1);
+    expect(state.gitaCursor).toBe(2);
     expect(Object.keys(state.sentDates)).toHaveLength(1);
   });
 

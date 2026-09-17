@@ -4,7 +4,7 @@ This document is for developers and agents working on the bot. For setup and dep
 
 ## Overview
 
-wapp-quote sends one Bhagavad Gita shloka with Hindi भावार्थ to a WhatsApp group each day. The Gita content is fetched from a public API at send time. There is no legacy quote bank, Wikiquote integration, or AI reflection pipeline.
+wapp-quote sends the next Bhagavad Gita shlokas with Hindi भावार्थ to a WhatsApp group each day. By default it sends two consecutive shlokas per day, fetched from a public API at send time. There is no legacy quote bank, Wikiquote integration, or AI reflection pipeline.
 
 The process is a single Node.js app using [Baileys](https://github.com/WhiskeySockets/Baileys). Persistence is JSON files plus Baileys auth files under `data/`.
 
@@ -97,8 +97,8 @@ node dist/src/cli.js serve
 | File | Responsibility |
 |------|----------------|
 | [`src/config.ts`](../src/config.ts) | Env schema and validation helpers |
-| [`src/types.ts`](../src/types.ts) | Core state, Gita verse, WhatsApp sender types |
-| [`src/gita.ts`](../src/gita.ts) | Gita verse counts, cursor math, API fetch, normalization, validation |
+| [`src/types.ts`](../src/types.ts) | Core state, Gita verse batch, WhatsApp sender types |
+| [`src/gita.ts`](../src/gita.ts) | Gita verse counts, cursor math, batch selection, API fetch, normalization, validation |
 | [`src/gita-runner.ts`](../src/gita-runner.ts) | Idempotent daily Gita send primitive |
 | [`src/message.ts`](../src/message.ts) | Gita WhatsApp message renderer |
 | [`src/commands.ts`](../src/commands.ts) | CLI command orchestration and scheduled retry loop |
@@ -118,7 +118,7 @@ State shape:
 ```ts
 type BotState = {
   gitaCursor: number;
-  sentDates: Record<string, { verseId: string; label: string; sentAt: string; messageId?: string }>;
+  sentDates: Record<string, { verseIds: string[]; label: string; sentAt: string; messageId?: string }>;
 };
 ```
 
@@ -128,17 +128,17 @@ type BotState = {
 [47, 72, 43, 42, 29, 47, 30, 28, 34, 42, 55, 20, 35, 27, 20, 24, 28, 78]
 ```
 
-After 18.78, the cursor wraps to 1.1.
+`GITA_VERSES_PER_DAY` defaults to `2`, so the cursor usually advances by two after a successful send. After 18.78, the cursor wraps to 1.1.
 
 ## API handling
 
-[`src/gita.ts`](../src/gita.ts) fetches:
+[`src/gita.ts`](../src/gita.ts) fetches each verse in the daily batch:
 
 ```text
 {GITA_API_BASE_URL}/slok/{chapter}/{verse}/
 ```
 
-A response must contain:
+Each response must contain:
 
 - requested chapter/verse
 - non-empty Sanskrit shloka text
@@ -162,8 +162,8 @@ sequenceDiagram
     Cmd->>WA: ensureConnected
     Cmd->>Store: load
     Cmd->>Run: runDailyGita
-    Run->>Gita: selectNextGitaVerse
-    Gita-->>Run: verse + nextState
+    Run->>Gita: selectNextGitaVerses
+    Gita-->>Run: verse batch + nextState
     Run->>Msg: renderGitaMessage
     Run->>WA: sendText
     WA-->>Run: messageId
@@ -182,11 +182,15 @@ Retry layers:
 ```text
 🌅 सुप्रभात
 
-🕉️ श्रीमद्भगवद्गीता {chapter}.{verse}
-{sanskrit shloka}
+🕉️ श्रीमद्भगवद्गीता {start}–{end}
+{sanskrit shloka 1}
+
+{sanskrit shloka 2}
 
 📖 भावार्थ:
-{hindi meaning}
+{chapter.verse} — {hindi meaning 1}
+
+{chapter.verse} — {hindi meaning 2}
 ```
 
 ## Data files

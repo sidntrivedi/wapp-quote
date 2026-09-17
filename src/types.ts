@@ -9,8 +9,16 @@ export type GitaVerse = {
   sourceLabel?: string;
 };
 
+export type GitaVerseBatch = {
+  kind: 'gita-batch';
+  id: string;
+  verseIds: string[];
+  label: string;
+  verses: GitaVerse[];
+};
+
 export type SentGitaEntry = {
-  verseId: string;
+  verseIds: string[];
   label: string;
   sentAt: string;
   messageId?: string;

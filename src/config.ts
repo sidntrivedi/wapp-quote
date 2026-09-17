@@ -14,6 +14,7 @@ const envSchema = z.object({
   GITA_API_BASE_URL: z.string().url().default('https://vedicscriptures.github.io'),
   GITA_API_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(10000),
   GITA_HINDI_FIELD: z.string().trim().min(1).default('tej.ht'),
+  GITA_VERSES_PER_DAY: z.coerce.number().int().min(1).max(10).default(2),
   GITA_TIME: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).default('06:00'),
   TZ: z.string().trim().min(1).default('Asia/Kolkata'),
   AUTH_METHOD: z.enum(['pairing', 'qr']).default('pairing'),
@@ -38,6 +39,7 @@ export type AppConfig = {
   gitaApiBaseUrl: string;
   gitaApiTimeoutMs: number;
   gitaHindiField: string;
+  gitaVersesPerDay: number;
   gitaTime: string;
   timeZone: string;
   authMethod: 'pairing' | 'qr';
@@ -67,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     gitaApiBaseUrl: parsed.GITA_API_BASE_URL.replace(/\/$/, ''),
     gitaApiTimeoutMs: parsed.GITA_API_TIMEOUT_MS,
     gitaHindiField: parsed.GITA_HINDI_FIELD,
+    gitaVersesPerDay: parsed.GITA_VERSES_PER_DAY,
     gitaTime: parsed.GITA_TIME,
     timeZone: parsed.TZ,
     authMethod: parsed.AUTH_METHOD,

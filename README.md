@@ -1,6 +1,6 @@
 # wapp-quote
 
-A daily WhatsApp bot that sends the next sequential Bhagavad Gita shloka with Hindi भावार्थ to a group.
+A daily WhatsApp bot that sends the next Bhagavad Gita shlokas with Hindi भावार्थ to a group.
 
 Built with [Baileys](https://github.com/WhiskeySockets/Baileys). Intended for small, consenting groups — one message per day, no bulk messaging.
 
@@ -12,8 +12,9 @@ Built with [Baileys](https://github.com/WhiskeySockets/Baileys). Intended for sm
 ## Features
 
 - **Bhagavad Gita sequence** — Chapter 1.1 → 18.78, then wraps to 1.1
+- **Two shlokas per day** — default `GITA_VERSES_PER_DAY=2`, finishing the Gita in about 350 days
 - **API-only content** — fetches `/slok/{chapter}/{verse}/` at send time
-- **Clean Hindi message** — Sanskrit shloka + Hindi meaning only
+- **Clean Hindi message** — Sanskrit shlokas together, then Hindi meaning below
 - **Idempotent daily sends** — `data/state.json` prevents duplicates and stores the Gita cursor
 - **Retries and catch-up** — retries transient failures, then skips after the catch-up window
 - **Optional health webhook** — stores Apple Health payloads and posts a Hindi daily report
@@ -23,19 +24,23 @@ Built with [Baileys](https://github.com/WhiskeySockets/Baileys). Intended for sm
 ```text
 🌅 सुप्रभात
 
-🕉️ श्रीमद्भगवद्गीता 1.1
+🕉️ श्रीमद्भगवद्गीता 1.1–1.2
 धृतराष्ट्र उवाच ...
 
+सञ्जय उवाच ...
+
 📖 भावार्थ:
-धृतराष्ट्र ने पूछा ...
+1.1 — धृतराष्ट्र ने पूछा ...
+
+1.2 — संजय ने कहा ...
 ```
 
 ## How it works
 
 1. Links to WhatsApp as a paired device and stays connected.
 2. At `GITA_TIME`, reads `gitaCursor` from `data/state.json`.
-3. Fetches the corresponding Gita verse from the configured API.
-4. Validates requested chapter/verse, Sanskrit text, and Hindi Devanagari meaning.
+3. Fetches `GITA_VERSES_PER_DAY` consecutive verses from the configured API.
+4. Validates each requested chapter/verse, Sanskrit text, and Hindi Devanagari meaning.
 5. Sends the message and saves the advanced cursor only after WhatsApp accepts it.
 
 If the API response is invalid or unavailable, the attempt fails/skips. The bot does not send fallback content.
@@ -80,8 +85,8 @@ npm run dev -- serve             # start daily scheduler
 | Command | Description |
 |---------|-------------|
 | `serve` | Run the daily scheduler |
-| `send-now` | Send the next Gita shloka immediately |
-| `preview` | Print the next Gita shloka without sending |
+| `send-now` | Send the next Gita shlokas immediately |
+| `preview` | Print the next Gita shlokas without sending |
 | `list-groups` | List group names and JIDs |
 | `pair` | Link WhatsApp via pairing code |
 | `pair-qr` | Link WhatsApp via QR code |
@@ -96,6 +101,7 @@ npm run dev -- serve             # start daily scheduler
 | `GITA_API_BASE_URL` | `https://vedicscriptures.github.io` | VedicScriptures-compatible base URL |
 | `GITA_API_TIMEOUT_MS` | `10000` | API timeout in milliseconds |
 | `GITA_HINDI_FIELD` | `tej.ht` | Preferred Hindi meaning field; falls back to first valid Hindi field |
+| `GITA_VERSES_PER_DAY` | `2` | Number of consecutive shlokas sent per day |
 | `GITA_TIME` | `06:00` | Daily send time, 24-hour local format |
 | `GITA_CATCH_UP` | `true` | Poll for missed sends within the catch-up window |
 | `TZ` | `Asia/Kolkata` | Timezone for schedule and date tracking |

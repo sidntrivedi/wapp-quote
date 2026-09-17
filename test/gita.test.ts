@@ -1,21 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchGitaVerse, gitaIndexFromPosition, gitaPositionFromIndex, selectNextGitaVerse } from '../src/gita.js';
+import { fetchGitaVerse, gitaIndexFromPosition, gitaPositionFromIndex, selectNextGitaVerses } from '../src/gita.js';
 import type { BotState } from '../src/types.js';
 
 function gitaResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status: 200 });
 }
 
-const validPayload = {
-  chapter: 1,
-  verse: 1,
-  slok: 'धृतराष्ट्र उवाच',
-  tej: { ht: 'धृतराष्ट्र ने संजय से पूछा।' }
-};
+function payload(chapter: number, verse: number): unknown {
+  return {
+    chapter,
+    verse,
+    slok: `श्लोक ${chapter}.${verse}`,
+    tej: { ht: `भावार्थ ${chapter}.${verse} है।` }
+  };
+}
 
 describe('gita source', () => {
   it('fetches /slok/1/1/ and extracts Sanskrit plus preferred Hindi meaning', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(gitaResponse(validPayload));
+    const fetchImpl = vi.fn().mockResolvedValue(gitaResponse(payload(1, 1)));
 
     const verse = await fetchGitaVerse(1, 1, {
       baseUrl: 'https://example.com/',
@@ -30,8 +32,8 @@ describe('gita source', () => {
       label: 'भगवद्गीता 1.1',
       chapter: 1,
       verse: 1,
-      sanskrit: 'धृतराष्ट्र उवाच',
-      hindiMeaning: 'धृतराष्ट्र ने संजय से पूछा।'
+      sanskrit: 'श्लोक 1.1',
+      hindiMeaning: 'भावार्थ 1.1 है।'
     });
   });
 
@@ -56,41 +58,43 @@ describe('gita source', () => {
     expect(verse.hindiMeaning).toBe('यह हिन्दी भावार्थ है।');
   });
 
-  it('selects chapter 1 verse 1 for a new cursor and advances returned state', async () => {
-    const fetchImpl = vi.fn().mockResolvedValue(gitaResponse(validPayload));
+  it('selects two verses for a new cursor and advances returned state by two', async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const match = String(url).match(/\/slok\/(\d+)\/(\d+)\//);
+      return gitaResponse(payload(Number(match?.[1]), Number(match?.[2])));
+    });
     const state: BotState = { gitaCursor: 0, sentDates: {} };
 
-    const result = await selectNextGitaVerse({
-      config: { gitaApiBaseUrl: 'https://example.com', gitaApiTimeoutMs: 10_000, gitaHindiField: 'tej.ht' },
+    const result = await selectNextGitaVerses({
+      config: { gitaApiBaseUrl: 'https://example.com', gitaApiTimeoutMs: 10_000, gitaHindiField: 'tej.ht', gitaVersesPerDay: 2 },
       state,
       fetchImpl
     });
 
-    expect(fetchImpl).toHaveBeenCalledWith('https://example.com/slok/1/1/', expect.any(Object));
-    expect(result.verse.id).toBe('gita-01-001');
-    expect(result.nextState.gitaCursor).toBe(1);
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, 'https://example.com/slok/1/1/', expect.any(Object));
+    expect(fetchImpl).toHaveBeenNthCalledWith(2, 'https://example.com/slok/1/2/', expect.any(Object));
+    expect(result.batch.verseIds).toEqual(['gita-01-001', 'gita-01-002']);
+    expect(result.batch.label).toBe('भगवद्गीता 1.1–1.2');
+    expect(result.nextState.gitaCursor).toBe(2);
     expect(state.gitaCursor).toBe(0);
   });
 
-  it('wraps from 18.78 back to 1.1', async () => {
+  it('wraps a two-verse batch from 18.78 back to 1.1', async () => {
     const lastIndex = gitaIndexFromPosition(18, 78);
-    const fetchImpl = vi.fn().mockResolvedValue(
-      gitaResponse({
-        chapter: 18,
-        verse: 78,
-        slok: 'यत्र योगेश्वरः कृष्णः',
-        tej: { ht: 'जहाँ योगेश्वर श्रीकृष्ण हैं।' }
-      })
-    );
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const match = String(url).match(/\/slok\/(\d+)\/(\d+)\//);
+      return gitaResponse(payload(Number(match?.[1]), Number(match?.[2])));
+    });
 
-    const result = await selectNextGitaVerse({
-      config: { gitaApiBaseUrl: 'https://example.com', gitaApiTimeoutMs: 10_000, gitaHindiField: 'tej.ht' },
+    const result = await selectNextGitaVerses({
+      config: { gitaApiBaseUrl: 'https://example.com', gitaApiTimeoutMs: 10_000, gitaHindiField: 'tej.ht', gitaVersesPerDay: 2 },
       state: { gitaCursor: lastIndex, sentDates: {} },
       fetchImpl
     });
 
-    expect(result.verse.id).toBe('gita-18-078');
-    expect(result.nextState.gitaCursor).toBe(0);
+    expect(result.batch.verseIds).toEqual(['gita-18-078', 'gita-01-001']);
+    expect(result.batch.label).toBe('भगवद्गीता 18.78–1.1');
+    expect(result.nextState.gitaCursor).toBe(1);
     expect(gitaPositionFromIndex(lastIndex)).toEqual({ chapter: 18, verse: 78 });
   });
 

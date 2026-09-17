@@ -50,12 +50,17 @@ function normalizeSentDates(
   const normalized: BotState['sentDates'] = {};
 
   for (const [dateKey, entry] of Object.entries(sentDates ?? {})) {
-    if (!entry?.verseId || !entry.sentAt) {
+    if (!Array.isArray(entry?.verseIds) || entry.verseIds.length === 0 || !entry.sentAt) {
+      continue;
+    }
+
+    const verseIds = entry.verseIds.filter((id): id is string => typeof id === 'string');
+    if (verseIds.length === 0) {
       continue;
     }
 
     normalized[dateKey] = {
-      verseId: entry.verseId,
+      verseIds,
       label: typeof entry.label === 'string' ? entry.label : '',
       sentAt: entry.sentAt,
       ...(entry.messageId ? { messageId: entry.messageId } : {})
